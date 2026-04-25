@@ -5,7 +5,6 @@ const path = require('path');
 const adapter = new FileSync(path.join(__dirname, 'db.json'));
 const db = low(adapter);
 
-// Создаём начальную структуру базы данных если её нет
 db.defaults({
   users: [],
   listings: [],
@@ -14,7 +13,6 @@ db.defaults({
   _nextTransactionId: 1,
 }).write();
 
-// Вспомогательные функции для автоинкремента ID
 db.getNextListingId = () => {
   const id = db.get('_nextListingId').value();
   db.set('_nextListingId', id + 1).write();
