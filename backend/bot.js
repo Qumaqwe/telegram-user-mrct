@@ -216,29 +216,158 @@ function createBot(webappUrl) {
           .write();
 
         const listing = db.get('listings').find({ id: tx.listing_id }).value();
-        const seller = db.get('users').find({ telegram_id: tx.seller_id }).value();
+        const buyer = ctx.from;
 
+        // ── Покупатель: инструкция ──
         await ctx.reply(
-          `✅ <b>Оплата прошла!</b>\n\n` +
-          `Ты купил юзернейм: <code>@${listing.username}</code>\n` +
-          `Сумма: ${payment.total_amount} ⭐\n\n` +
-          `${seller?.username ? `Написать продавцу: @${seller.username}` : 'Продавец напишет тебе сам'}`,
+          `✅ <b>Оплата прошла! ${payment.total_amount} ⭐ списаны.</b>\n\n` +
+          `Юзернейм: <code>@${listing.username}</code>\n\n` +
+          `⏳ <b>Как только продавец освободит юзернейм — бот пришлёт тебе сигнал.</b>\n` +
+          `В этот момент нужно за несколько секунд зайти:\n` +
+          `Настройки → Редактировать профиль → Имя пользователя → ввести <code>${listing.username}</code> → Сохранить\n\n` +
+          `Держи телефон наготове 📱`,
           { parse_mode: 'HTML' }
         );
 
-        // Уведомляем продавца
+        // ── Продавец: кнопка подтверждения ──
         await bot.telegram.sendMessage(
           tx.seller_id,
-          `💰 <b>Твой юзернейм продан!</b>\n\n` +
+          `💰 <b>Твой юзернейм куплен!</b>\n\n` +
           `Юзернейм: <code>@${listing.username}</code>\n` +
-          `Сумма: ${payment.total_amount} ⭐\n\n` +
-          `Покупатель: ${ctx.from.first_name}${ctx.from.username ? ` (@${ctx.from.username})` : ''}\n\n` +
-          `⚠️ Пожалуйста, свяжись с покупателем и передай юзернейм!`,
-          { parse_mode: 'HTML' }
+          `Сумма: <b>${payment.total_amount} ⭐</b> зачислена.\n\n` +
+          `<b>Как передать юзернейм покупателю:</b>\n` +
+          `1. Зайди: Настройки → Редактировать профиль\n` +
+          `2. Нажми на поле «Имя пользователя»\n` +
+          `3. <b>Удали</b> <code>${listing.username}</code> и сохрани\n` +
+          `4. Нажми кнопку ниже — бот мгновенно оповестит покупателя\n\n` +
+          `⚡ Делай быстро — юзернейм будет свободен только несколько секунд!`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [[
+                {
+                  text: '✅ Я освободил юзернейм — оповестить покупателя!',
+                  callback_data: `released_${tx.id}_${buyerId}`,
+                },
+              ]],
+            },
+          }
         );
       }
     } catch (err) {
       console.error('Payment processing error:', err);
+    }
+  });
+
+  // Продавец нажал "Освободил" — мгновенно оповещаем покупателя
+  bot.action(/^released_(\d+)_(\d+)$/, async (ctx) => {
+    const txId = parseInt(ctx.match[1]);
+    const buyerId = parseInt(ctx.match[2]);
+
+    await ctx.answerCbQuery('Покупатель оповещён!');
+
+    const tx = db.get('transactions').find({ id: txId }).value();
+    if (!tx) return;
+
+    const listing = db.get('listings').find({ id: tx.listing_id }).value();
+    const seller = ctx.from;
+
+    // Убираем кнопку у продавца
+    await ctx.editMessageText(
+      `✅ <b>Покупатель оповещён!</b>\n\n` +
+      `Юзернейм <code>@${listing.username}</code> освобождён.\n` +
+      `Ждём подтверждения от покупателя...`,
+      { parse_mode: 'HTML' }
+    );
+
+    // ── Покупатель: сигнал "ХВАТАЙ СЕЙЧАС" ──
+    await bot.telegram.sendMessage(
+      buyerId,
+      `🚨 <b>СЕЙЧАС! Хватай юзернейм!</b>\n\n` +
+      `Продавец только что освободил <code>@${listing.username}</code>\n\n` +
+      `👉 Немедленно:\n` +
+      `Настройки → Редактировать профиль → Имя пользователя → <code>${listing.username}</code> → Сохранить\n\n` +
+      `У тебя есть несколько секунд ⚡`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ Получил юзернейм!', callback_data: `confirmed_${txId}_${tx.seller_id}` },
+            { text: '❌ Не успел', callback_data: `failed_${txId}_${tx.seller_id}` },
+          ]],
+        },
+      }
+    );
+  });
+
+  // Покупатель подтвердил получение
+  bot.action(/^confirmed_(\d+)_(\d+)$/, async (ctx) => {
+    const txId = parseInt(ctx.match[1]);
+    const sellerId = parseInt(ctx.match[2]);
+
+    await ctx.answerCbQuery('🎉 Поздравляем!');
+
+    const tx = db.get('transactions').find({ id: txId }).value();
+    const listing = db.get('listings').find({ id: tx.listing_id }).value();
+
+    await ctx.editMessageText(
+      `🎉 <b>Сделка завершена!</b>\n\n` +
+      `Юзернейм <code>@${listing.username}</code> твой!\n` +
+      `Спасибо за покупку в Username Market 🏪`,
+      { parse_mode: 'HTML' }
+    );
+
+    await bot.telegram.sendMessage(
+      sellerId,
+      `🎉 <b>Сделка успешно завершена!</b>\n\n` +
+      `Покупатель подтвердил получение <code>@${listing.username}</code>.\n` +
+      `Спасибо за продажу! 💰`,
+      { parse_mode: 'HTML' }
+    );
+  });
+
+  // Покупатель не успел
+  bot.action(/^failed_(\d+)_(\d+)$/, async (ctx) => {
+    const txId = parseInt(ctx.match[1]);
+    const sellerId = parseInt(ctx.match[2]);
+
+    await ctx.answerCbQuery('Не переживай, разберёмся');
+
+    const adminIds = (process.env.ADMIN_IDS || '').split(',').map(Number);
+    const tx = db.get('transactions').find({ id: txId }).value();
+    const listing = db.get('listings').find({ id: tx.listing_id }).value();
+
+    await ctx.editMessageText(
+      `😔 <b>Не успел перехватить юзернейм.</b>\n\n` +
+      `Это бывает — кто-то мог взять @${listing.username} раньше.\n\n` +
+      `Администратор уже уведомлён и разберётся с ситуацией.\n` +
+      `Ожидай сообщения.`,
+      { parse_mode: 'HTML' }
+    );
+
+    // Уведомляем продавца
+    await bot.telegram.sendMessage(
+      sellerId,
+      `⚠️ <b>Покупатель сообщил, что не успел получить юзернейм.</b>\n\n` +
+      `Юзернейм: <code>@${listing.username}</code>\n` +
+      `Транзакция #${txId}\n\n` +
+      `Свяжитесь с администратором для решения ситуации.`,
+      { parse_mode: 'HTML' }
+    );
+
+    // Уведомляем всех администраторов
+    for (const adminId of adminIds) {
+      if (!adminId) continue;
+      await bot.telegram.sendMessage(
+        adminId,
+        `🚨 <b>Проблема с передачей юзернейма!</b>\n\n` +
+        `Юзернейм: <code>@${listing.username}</code>\n` +
+        `Транзакция #${txId}\n` +
+        `Покупатель (ID: ${ctx.from.id}) не получил юзернейм.\n` +
+        `Продавец (ID: ${sellerId})\n\n` +
+        `Нужно разобраться вручную.`,
+        { parse_mode: 'HTML' }
+      );
     }
   });
 
