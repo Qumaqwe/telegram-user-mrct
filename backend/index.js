@@ -23,7 +23,7 @@ app.get('/api/health', (req, res) => {
 // Запускаем сервер
 app.listen(PORT, () => {
   console.log(`✅ Сервер запущен на порту ${PORT}`);
-  console.log(`🌐 API доступен: http://localhost:${PORT}/api`);
+  console.log(`🌐 API доступен: /api (Railway домен)`);
 });
 
 // Запускаем бота
