@@ -14,6 +14,7 @@ app.use(express.json());
 app.use('/api/users', require('./routes/users'));
 app.use('/api/listings', require('./routes/listings'));
 app.use('/api/payments', require('./routes/payments'));
+app.use('/api/admin', require('./routes/admin'));
 
 // Проверка, что сервер работает
 app.get('/api/health', (req, res) => {
