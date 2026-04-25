@@ -6,7 +6,7 @@ export default function Profile() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const { getMe } = useApi();
-  const { user: tgUser, tg } = useTelegram();
+  const { user, tg } = useTelegram();
 
   useEffect(() => {
     getMe()
@@ -15,18 +15,11 @@ export default function Profile() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Берём данные из любого доступного источника
-  const dbUser    = data?.user;
-  const firstName = tgUser?.first_name || dbUser?.first_name || '';
-  const lastName  = tgUser?.last_name  || dbUser?.last_name  || '';
-  const username  = tgUser?.username   || dbUser?.username   || '';
-  const userId    = tgUser?.id         || dbUser?.telegram_id;
-
   const stats = {
-    active:  data?.listings?.filter((l) => l.status === 'active').length || 0,
-    sold:    data?.listings?.filter((l) => l.status === 'sold').length || 0,
-    earned:  data?.listings?.filter((l) => l.status === 'sold').reduce((s, l) => s + l.price, 0) || 0,
-    spent:   data?.purchases?.reduce((s, p) => s + p.amount, 0) || 0,
+    active: data?.listings?.filter((l) => l.status === 'active').length || 0,
+    sold: data?.listings?.filter((l) => l.status === 'sold').length || 0,
+    earned: data?.listings?.filter((l) => l.status === 'sold').reduce((sum, l) => sum + l.price, 0) || 0,
+    spent: data?.purchases?.reduce((sum, p) => sum + p.amount, 0) || 0,
   };
 
   return (
@@ -45,19 +38,14 @@ export default function Profile() {
             justifyContent: 'center', fontSize: '24px', fontWeight: 700, color: '#fff',
             flexShrink: 0,
           }}>
-            {(firstName || 'U')[0].toUpperCase()}
+            {(user?.first_name || 'U')[0].toUpperCase()}
           </div>
-          <div style={{ flex: 1 }}>
+          <div>
             <div style={{ fontWeight: 700, fontSize: '18px' }}>
-              {firstName || 'Загрузка...'} {lastName}
+              {user?.first_name} {user?.last_name || ''}
             </div>
-            {username && (
-              <div style={{ color: 'var(--accent)', fontSize: '14px' }}>@{username}</div>
-            )}
-            {userId && (
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                ID: {userId}
-              </div>
+            {user?.username && (
+              <div style={{ color: 'var(--accent)', fontSize: '14px' }}>@{user.username}</div>
             )}
           </div>
         </div>
@@ -70,10 +58,10 @@ export default function Profile() {
           {/* Stats grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
             {[
-              { label: 'Активных',   value: stats.active,                          icon: '📋' },
-              { label: 'Продано',    value: stats.sold,                            icon: '✅' },
+              { label: 'Активных', value: stats.active, icon: '📋' },
+              { label: 'Продано', value: stats.sold, icon: '✅' },
               { label: 'Заработано', value: `⭐ ${stats.earned.toLocaleString()}`, icon: '💰' },
-              { label: 'Потрачено',  value: `⭐ ${stats.spent.toLocaleString()}`,  icon: '🛒' },
+              { label: 'Потрачено', value: `⭐ ${stats.spent.toLocaleString()}`, icon: '🛒' },
             ].map((s) => (
               <div key={s.label} className="card" style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '24px', marginBottom: '4px' }}>{s.icon}</div>
