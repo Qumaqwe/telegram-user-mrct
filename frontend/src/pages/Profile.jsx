@@ -5,33 +5,21 @@ import { useTelegram } from '../hooks/useTelegram';
 export default function Profile() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { getMe, register } = useApi();
-  const { user: tgUser, tg } = useTelegram();
+  const { getMe } = useApi();
+  const { user, tg } = useTelegram();
 
   useEffect(() => {
-    // Сначала регистрируем (на случай если App ещё не успел), потом получаем профиль
-    register()
+    getMe()
+      .then((res) => setData(res.data))
       .catch(() => {})
-      .finally(() => {
-        getMe()
-          .then((res) => setData(res.data))
-          .catch(() => {})
-          .finally(() => setLoading(false));
-      });
+      .finally(() => setLoading(false));
   }, []);
 
-  // Данные пользователя: из БД или из Telegram (что доступно)
-  const dbUser  = data?.user;
-  const name       = dbUser?.first_name || tgUser?.first_name || '—';
-  const lastName   = dbUser?.last_name  || tgUser?.last_name  || '';
-  const username   = dbUser?.username   || tgUser?.username   || null;
-  const userId     = dbUser?.telegram_id ?? tgUser?.id ?? null;
-
   const stats = {
-    active:  data?.listings?.filter((l) => l.status === 'active').length  || 0,
-    sold:    data?.listings?.filter((l) => l.status === 'sold').length    || 0,
-    earned:  data?.listings?.filter((l) => l.status === 'sold').reduce((s, l) => s + l.price, 0) || 0,
-    spent:   data?.purchases?.reduce((s, p) => s + p.amount, 0) || 0,
+    active: data?.listings?.filter((l) => l.status === 'active').length || 0,
+    sold: data?.listings?.filter((l) => l.status === 'sold').length || 0,
+    earned: data?.listings?.filter((l) => l.status === 'sold').reduce((sum, l) => sum + l.price, 0) || 0,
+    spent: data?.purchases?.reduce((sum, p) => sum + p.amount, 0) || 0,
   };
 
   return (
@@ -41,44 +29,42 @@ export default function Profile() {
         <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Твоя статистика</p>
       </div>
 
+      {/* User info — показываем сразу, не ждём БД */}
+      <div className="card" style={{ marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{
+            width: '56px', height: '56px', borderRadius: '50%',
+            background: 'var(--accent)', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: '24px', fontWeight: 700, color: '#fff',
+            flexShrink: 0,
+          }}>
+            {(user?.first_name || 'U')[0].toUpperCase()}
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '18px' }}>
+              {user?.first_name} {user?.last_name || ''}
+            </div>
+            {user?.username && (
+              <div style={{ color: 'var(--accent)', fontSize: '14px' }}>@{user.username}</div>
+            )}
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              ID: {user?.id}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {loading ? (
         <div className="loader" />
       ) : (
         <>
-          {/* User info */}
-          <div className="card" style={{ marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <div style={{
-                width: '56px', height: '56px', borderRadius: '50%',
-                background: 'var(--accent)', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: '24px', fontWeight: 700, color: '#fff',
-                flexShrink: 0,
-              }}>
-                {name[0].toUpperCase()}
-              </div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '18px' }}>
-                  {name} {lastName}
-                </div>
-                {username && (
-                  <div style={{ color: 'var(--accent)', fontSize: '14px' }}>@{username}</div>
-                )}
-                {userId !== null && (
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    ID: {userId}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
           {/* Stats grid */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
             {[
-              { label: 'Активных',   value: stats.active,                          icon: '📋' },
-              { label: 'Продано',    value: stats.sold,                            icon: '✅' },
+              { label: 'Активных', value: stats.active, icon: '📋' },
+              { label: 'Продано', value: stats.sold, icon: '✅' },
               { label: 'Заработано', value: `⭐ ${stats.earned.toLocaleString()}`, icon: '💰' },
-              { label: 'Потрачено',  value: `⭐ ${stats.spent.toLocaleString()}`,  icon: '🛒' },
+              { label: 'Потрачено', value: `⭐ ${stats.spent.toLocaleString()}`, icon: '🛒' },
             ].map((s) => (
               <div key={s.label} className="card" style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '24px', marginBottom: '4px' }}>{s.icon}</div>
