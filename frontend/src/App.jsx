@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useTelegram } from './hooks/useTelegram';
 import { useApi } from './hooks/useApi';
@@ -11,37 +11,19 @@ import Profile from './pages/Profile';
 export default function App() {
   const { tg, expand } = useTelegram();
   const { register } = useApi();
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Инициализация Telegram WebApp
+    // Инициализация Telegram WebApp (ready() уже вызван в index.html, но дублируем для надёжности)
     if (tg) {
       tg.ready();
       expand();
-      // Тёмная тема
-      document.documentElement.style.setProperty('--bg', tg.themeParams?.bg_color || '#0f0f13');
     }
 
-    // Регистрируем пользователя
-    register()
-      .catch(() => {})
-      .finally(() => setReady(true));
+    // Регистрируем пользователя в фоне, не блокируя UI
+    register().catch(() => {});
   }, []);
 
-  if (!ready) {
-    return (
-      <div style={{
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        minHeight: '100dvh', gap: '16px',
-      }}>
-        <div style={{ fontSize: '48px' }}>🏪</div>
-        <div className="loader" />
-        <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Загрузка маркета...</p>
-      </div>
-    );
-  }
-
+  // Показываем UI сразу — без экрана загрузки
   return (
     <BrowserRouter>
       <Routes>
