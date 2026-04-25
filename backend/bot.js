@@ -4,6 +4,43 @@ const db = require('./database');
 function createBot(webappUrl) {
   const bot = new Telegraf(process.env.BOT_TOKEN);
 
+  async function sendInvoiceForListing(ctx, listingId) {
+    const buyerId = ctx.from.id;
+
+    const listing = db.get('listings').find({ id: listingId, status: 'active' }).value();
+    if (!listing) {
+      await ctx.reply('❌ Это объявление уже не активно');
+      return;
+    }
+    if (listing.seller_id === buyerId) {
+      await ctx.reply('❌ Нельзя купить у самого себя');
+      return;
+    }
+
+    const txId = db.getNextTransactionId();
+    db.get('transactions')
+      .push({
+        id: txId,
+        listing_id: listingId,
+        buyer_id: buyerId,
+        seller_id: listing.seller_id,
+        amount: listing.price,
+        status: 'pending',
+        stars_payment_id: null,
+        created_at: new Date().toISOString(),
+      })
+      .write();
+
+    await ctx.replyWithInvoice({
+      title: `@${listing.username}`,
+      description: listing.description || `Покупка юзернейма @${listing.username}`,
+      payload: JSON.stringify({ transaction_id: txId, listing_id: listingId }),
+      currency: 'XTR',
+      prices: [{ label: `@${listing.username}`, amount: listing.price }],
+      provider_token: '',
+    });
+  }
+
   // /start — главная команда
   bot.start(async (ctx) => {
     const user = ctx.from;
@@ -26,18 +63,24 @@ function createBot(webappUrl) {
       }).write();
     }
 
+    // Если /start пришёл с payload (deep-link), например: ?start=buy_12
+    const payload = ctx.startPayload;
+    if (payload && /^buy_\d+$/.test(payload)) {
+      const listingId = parseInt(payload.split('_')[1]);
+      await sendInvoiceForListing(ctx, listingId);
+      return;
+    }
+
     await ctx.reply(
       `👋 Привет, ${user.first_name}!\n\n` +
-      `🏪 Добро пожаловать в <b>Username Market</b> — маркетплейс Telegram-юзернеймов!\n\n` +
-      `Здесь ты можешь:\n` +
-      `• 🛒 Купить красивый юзернейм\n` +
-      `• 💰 Продать свой юзернейм за Telegram Stars\n\n` +
-      `Нажми кнопку ниже, чтобы открыть магазин:`,
+        `🏪 Добро пожаловать в <b>Username Market</b> — маркетплейс Telegram-юзернеймов!\n\n` +
+        `Здесь ты можешь:\n` +
+        `• 🛒 Купить красивый юзернейм\n` +
+        `• 💰 Продать свой юзернейм за Telegram Stars\n\n` +
+        `Нажми кнопку ниже, чтобы открыть магазин:`,
       {
         parse_mode: 'HTML',
-        ...Markup.keyboard([
-          [Markup.button.webApp('🏪 Открыть маркет', webappUrl)]
-        ]).resize(),
+        ...Markup.keyboard([[Markup.button.webApp('🏪 Открыть маркет', webappUrl)]]).resize(),
       }
     );
   });
@@ -113,32 +156,8 @@ function createBot(webappUrl) {
   // Inline-кнопка для покупки (через deep link)
   bot.action(/^buy_(\d+)$/, async (ctx) => {
     const listingId = parseInt(ctx.match[1]);
-    const buyerId = ctx.from.id;
-
-    const listing = db.get('listings').find({ id: listingId, status: 'active' }).value();
-    if (!listing) return ctx.reply('❌ Это объявление уже не активно');
-    if (listing.seller_id === buyerId) return ctx.reply('❌ Нельзя купить у самого себя');
-
-    const txId = db.getNextTransactionId();
-    db.get('transactions').push({
-      id: txId,
-      listing_id: listingId,
-      buyer_id: buyerId,
-      seller_id: listing.seller_id,
-      amount: listing.price,
-      status: 'pending',
-      stars_payment_id: null,
-      created_at: new Date().toISOString(),
-    }).write();
-
-    await ctx.replyWithInvoice({
-      title: `@${listing.username}`,
-      description: listing.description || `Покупка юзернейма @${listing.username}`,
-      payload: JSON.stringify({ transaction_id: txId, listing_id: listingId }),
-      currency: 'XTR',
-      prices: [{ label: `@${listing.username}`, amount: listing.price }],
-      provider_token: '',
-    });
+    await ctx.answerCbQuery();
+    await sendInvoiceForListing(ctx, listingId);
   });
 
   return bot;
