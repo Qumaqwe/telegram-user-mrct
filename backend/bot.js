@@ -4,80 +4,74 @@ const db = require('./database');
 function createBot(webappUrl) {
   const bot = new Telegraf(process.env.BOT_TOKEN);
 
+  // ─── Вспомогательные функции ─────────────────────────────────────────────────
+
+  function isAdmin(userId) {
+    const adminIds = (process.env.ADMIN_IDS || '').split(',').map((id) => parseInt(id.trim()));
+    return adminIds.includes(userId);
+  }
+
+  function upsertUser(from) {
+    const existing = db.get('users').find({ telegram_id: from.id }).value();
+    if (existing) {
+      db.get('users').find({ telegram_id: from.id }).assign({
+        username: from.username || null,
+        first_name: from.first_name || null,
+        last_name: from.last_name || null,
+      }).write();
+    } else {
+      db.get('users').push({
+        telegram_id: from.id,
+        username: from.username || null,
+        first_name: from.first_name || null,
+        last_name: from.last_name || null,
+        created_at: new Date().toISOString(),
+      }).write();
+    }
+  }
+
   async function sendInvoiceForListing(ctx, listingId) {
     const buyerId = ctx.from.id;
+    const listing = db.get('listings').find({ id: parseInt(listingId), status: 'active' }).value();
 
-    const listing = db.get('listings').find({ id: listingId, status: 'active' }).value();
-    if (!listing) {
-      await ctx.reply('❌ Это объявление уже не активно');
-      return;
-    }
-    if (listing.seller_id === buyerId) {
-      await ctx.reply('❌ Нельзя купить у самого себя');
-      return;
-    }
+    if (!listing) { await ctx.reply('❌ Это объявление уже не активно'); return; }
+    if (listing.seller_id === buyerId) { await ctx.reply('❌ Нельзя купить у самого себя'); return; }
 
     const txId = db.getNextTransactionId();
-    db.get('transactions')
-      .push({
-        id: txId,
-        listing_id: listingId,
-        buyer_id: buyerId,
-        seller_id: listing.seller_id,
-        amount: listing.price,
-        status: 'pending',
-        stars_payment_id: null,
-        created_at: new Date().toISOString(),
-      })
-      .write();
+    db.get('transactions').push({
+      id: txId, listing_id: listing.id,
+      buyer_id: buyerId, seller_id: listing.seller_id,
+      amount: listing.price, status: 'pending',
+      stars_payment_id: null, created_at: new Date().toISOString(),
+    }).write();
 
     await ctx.replyWithInvoice({
       title: `@${listing.username}`,
       description: listing.description || `Покупка юзернейма @${listing.username}`,
-      payload: JSON.stringify({ transaction_id: txId, listing_id: listingId }),
+      payload: JSON.stringify({ transaction_id: txId, listing_id: listing.id }),
       currency: 'XTR',
       prices: [{ label: `@${listing.username}`, amount: listing.price }],
       provider_token: '',
     });
   }
 
-  // /start — главная команда
+  // ─── /start ───────────────────────────────────────────────────────────────────
   bot.start(async (ctx) => {
-    const user = ctx.from;
+    upsertUser(ctx.from);
 
-    // Регистрируем пользователя
-    const existing = db.get('users').find({ telegram_id: user.id }).value();
-    if (existing) {
-      db.get('users').find({ telegram_id: user.id }).assign({
-        username: user.username || null,
-        first_name: user.first_name || null,
-        last_name: user.last_name || null,
-      }).write();
-    } else {
-      db.get('users').push({
-        telegram_id: user.id,
-        username: user.username || null,
-        first_name: user.first_name || null,
-        last_name: user.last_name || null,
-        created_at: new Date().toISOString(),
-      }).write();
-    }
-
-    // Если /start пришёл с payload (deep-link), например: ?start=buy_12
     const payload = ctx.startPayload;
     if (payload && /^buy_\d+$/.test(payload)) {
-      const listingId = parseInt(payload.split('_')[1]);
-      await sendInvoiceForListing(ctx, listingId);
+      await sendInvoiceForListing(ctx, payload.slice(4));
       return;
     }
 
     await ctx.reply(
-      `👋 Привет, ${user.first_name}!\n\n` +
-        `🏪 Добро пожаловать в <b>Username Market</b> — маркетплейс Telegram-юзернеймов!\n\n` +
-        `Здесь ты можешь:\n` +
-        `• 🛒 Купить красивый юзернейм\n` +
-        `• 💰 Продать свой юзернейм за Telegram Stars\n\n` +
-        `Нажми кнопку ниже, чтобы открыть магазин:`,
+      `👋 Привет, ${ctx.from.first_name}!\n\n` +
+      `🏪 Добро пожаловать в <b>Username Market</b> — маркетплейс Telegram-юзернеймов!\n\n` +
+      `Здесь ты можешь:\n` +
+      `• 🛒 Купить красивый юзернейм\n` +
+      `• 💰 Продать свой юзернейм за Telegram Stars\n\n` +
+      `Нажми кнопку ниже, чтобы открыть магазин:`,
       {
         parse_mode: 'HTML',
         ...Markup.keyboard([[Markup.button.webApp('🏪 Открыть маркет', webappUrl)]]).resize(),
@@ -85,119 +79,88 @@ function createBot(webappUrl) {
     );
   });
 
-  // Проверка прав администратора
-  function isAdmin(userId) {
-    const adminIds = (process.env.ADMIN_IDS || '').split(',').map((id) => parseInt(id.trim()));
-    return adminIds.includes(userId);
-  }
-
-  // /help
+  // ─── /help ────────────────────────────────────────────────────────────────────
   bot.command('help', (ctx) => {
     ctx.reply(
       `📖 <b>Как пользоваться Username Market</b>\n\n` +
       `<b>Покупка:</b>\n` +
       `1. Открой маркет кнопкой ниже\n` +
       `2. Найди нужный юзернейм\n` +
-      `3. Нажми "Купить" — откроется бот для оплаты\n` +
-      `4. Продавец свяжется с тобой для передачи\n\n` +
+      `3. Нажми "Купить" — откроется бот для оплаты\n\n` +
       `<b>Продажа:</b>\n` +
       `1. Открой маркет → вкладка "Продать"\n` +
       `2. Заполни форму и опубликуй объявление\n` +
       `3. Когда найдётся покупатель — получи Stars\n\n` +
-      `⚠️ После оплаты юзернейм передаётся вручную.`,
+      `⚠️ После оплаты юзернейм передаётся через бота.`,
       { parse_mode: 'HTML' }
     );
   });
 
-  // /admin — статистика для администратора
+  // ─── Команды администратора ──────────────────────────────────────────────────
   bot.command('admin', async (ctx) => {
-    if (!isAdmin(ctx.from.id)) {
-      return ctx.reply('❌ У тебя нет прав администратора');
-    }
+    if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
 
-    const users = db.get('users').value();
-    const listings = db.get('listings').value();
+    const users        = db.get('users').value();
+    const listings     = db.get('listings').value();
     const transactions = db.get('transactions').value();
-
-    const activeListings = listings.filter((l) => l.status === 'active').length;
-    const soldListings = listings.filter((l) => l.status === 'sold').length;
-    const completedTx = transactions.filter((t) => t.status === 'completed');
-    const totalVolume = completedTx.reduce((sum, t) => sum + t.amount, 0);
+    const completed    = transactions.filter((t) => t.status === 'completed');
+    const volume       = completed.reduce((s, t) => s + t.amount, 0);
 
     await ctx.reply(
       `👑 <b>Панель администратора</b>\n\n` +
       `👥 Пользователей: <b>${users.length}</b>\n` +
-      `📋 Объявлений всего: <b>${listings.length}</b>\n` +
-      `  • Активных: <b>${activeListings}</b>\n` +
-      `  • Продано: <b>${soldListings}</b>\n\n` +
-      `💳 Сделок завершено: <b>${completedTx.length}</b>\n` +
-      `💰 Оборот: <b>${totalVolume.toLocaleString()} ⭐</b>\n\n` +
-      `Команды:\n` +
-      `/stats — подробная статистика\n` +
-      `/recent — последние 5 сделок\n` +
-      `/delisting [id] — снять объявление`,
+      `📋 Активных объявлений: <b>${listings.filter((l) => l.status === 'active').length}</b>\n` +
+      `✅ Продано: <b>${listings.filter((l) => l.status === 'sold').length}</b>\n` +
+      `💳 Сделок завершено: <b>${completed.length}</b>\n` +
+      `💰 Оборот: <b>${volume.toLocaleString()} ⭐</b>\n\n` +
+      `/stats /recent /delisting [id]`,
       { parse_mode: 'HTML' }
     );
   });
 
-  // /stats — расширенная статистика
   bot.command('stats', async (ctx) => {
     if (!isAdmin(ctx.from.id)) return;
-
     const transactions = db.get('transactions').value();
-    const pending = transactions.filter((t) => t.status === 'pending');
-    const completed = transactions.filter((t) => t.status === 'completed');
-
+    const completed    = transactions.filter((t) => t.status === 'completed');
+    const volume       = completed.reduce((s, t) => s + t.amount, 0);
     await ctx.reply(
-      `📊 <b>Расширенная статистика</b>\n\n` +
-      `⏳ Ожидают оплаты: <b>${pending.length}</b>\n` +
+      `📊 <b>Статистика</b>\n\n` +
+      `⏳ Ожидают оплаты: <b>${transactions.filter((t) => t.status === 'pending').length}</b>\n` +
       `✅ Завершены: <b>${completed.length}</b>\n` +
-      `💰 Оборот: <b>${completed.reduce((s, t) => s + t.amount, 0).toLocaleString()} ⭐</b>`,
+      `💰 Оборот: <b>${volume.toLocaleString()} ⭐</b>`,
       { parse_mode: 'HTML' }
     );
   });
 
-  // /recent — последние сделки
   bot.command('recent', async (ctx) => {
     if (!isAdmin(ctx.from.id)) return;
-
-    const recent = db.get('transactions')
-      .value()
+    const recent = db.get('transactions').value()
       .filter((t) => t.status === 'completed')
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(0, 5);
-
     if (!recent.length) return ctx.reply('Нет завершённых сделок');
-
     const lines = recent.map((t) => {
       const listing = db.get('listings').find({ id: t.listing_id }).value();
       return `• @${listing?.username || '?'} — ${t.amount} ⭐`;
     });
-
     await ctx.reply(`🕓 <b>Последние сделки:</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
   });
 
-  // /delisting [id] — снять объявление
   bot.command('delisting', async (ctx) => {
     if (!isAdmin(ctx.from.id)) return;
-
-    const args = ctx.message.text.split(' ');
-    const id = parseInt(args[1]);
+    const id = parseInt(ctx.message.text.split(' ')[1]);
     if (!id) return ctx.reply('Использование: /delisting [id объявления]');
-
     const listing = db.get('listings').find({ id }).value();
-    if (!listing) return ctx.reply(`❌ Объявление #${id} не найдено`);
-
+    if (!listing) return ctx.reply(`❌ Объявление не найдено`);
     db.get('listings').find({ id }).assign({ status: 'cancelled' }).write();
-    await ctx.reply(`✅ Объявление @${listing.username} (#${id}) снято с продажи`);
+    await ctx.reply(`✅ @${listing.username} снят с продажи`);
   });
 
-  // Обработчик pre-checkout для Stars
+  // ─── Платежи Stars ────────────────────────────────────────────────────────────
   bot.on('pre_checkout_query', async (ctx) => {
     await ctx.answerPreCheckoutQuery(true);
   });
 
-  // Обработчик успешного платежа Stars
   bot.on('successful_payment', async (ctx) => {
     const payment = ctx.message.successful_payment;
     const buyerId = ctx.from.id;
@@ -205,94 +168,74 @@ function createBot(webappUrl) {
     try {
       const payload = JSON.parse(payment.invoice_payload);
       const tx = db.get('transactions').find({ id: payload.transaction_id }).value();
+      if (!tx || tx.buyer_id !== buyerId) return;
 
-      if (tx && tx.buyer_id === buyerId) {
-        db.get('transactions').find({ id: tx.id })
-          .assign({ status: 'completed', stars_payment_id: payment.telegram_payment_charge_id })
-          .write();
+      db.get('transactions').find({ id: tx.id }).assign({
+        status: 'completed', stars_payment_id: payment.telegram_payment_charge_id,
+      }).write();
+      db.get('listings').find({ id: tx.listing_id }).assign({ status: 'sold' }).write();
 
-        db.get('listings').find({ id: tx.listing_id })
-          .assign({ status: 'sold' })
-          .write();
+      const listing = db.get('listings').find({ id: tx.listing_id }).value();
 
-        const listing = db.get('listings').find({ id: tx.listing_id }).value();
-        const buyer = ctx.from;
+      // Покупатель
+      await ctx.reply(
+        `✅ <b>Оплата прошла! ${payment.total_amount} ⭐ списаны.</b>\n\n` +
+        `Юзернейм: <code>@${listing.username}</code>\n\n` +
+        `⏳ Как только продавец освободит юзернейм — бот пришлёт тебе сигнал.\nДержи телефон наготове 📱`,
+        { parse_mode: 'HTML' }
+      );
 
-        // ── Покупатель: инструкция ──
-        await ctx.reply(
-          `✅ <b>Оплата прошла! ${payment.total_amount} ⭐ списаны.</b>\n\n` +
-          `Юзернейм: <code>@${listing.username}</code>\n\n` +
-          `⏳ <b>Как только продавец освободит юзернейм — бот пришлёт тебе сигнал.</b>\n` +
-          `В этот момент нужно за несколько секунд зайти:\n` +
-          `Настройки → Редактировать профиль → Имя пользователя → ввести <code>${listing.username}</code> → Сохранить\n\n` +
-          `Держи телефон наготове 📱`,
-          { parse_mode: 'HTML' }
-        );
-
-        // ── Продавец: кнопка подтверждения ──
-        await bot.telegram.sendMessage(
-          tx.seller_id,
-          `💰 <b>Твой юзернейм куплен!</b>\n\n` +
-          `Юзернейм: <code>@${listing.username}</code>\n` +
-          `Сумма: <b>${payment.total_amount} ⭐</b> зачислена.\n\n` +
-          `<b>Как передать юзернейм покупателю:</b>\n` +
-          `1. Зайди: Настройки → Редактировать профиль\n` +
-          `2. Нажми на поле «Имя пользователя»\n` +
-          `3. <b>Удали</b> <code>${listing.username}</code> и сохрани\n` +
-          `4. Нажми кнопку ниже — бот мгновенно оповестит покупателя\n\n` +
-          `⚡ Делай быстро — юзернейм будет свободен только несколько секунд!`,
-          {
-            parse_mode: 'HTML',
-            reply_markup: {
-              inline_keyboard: [[
-                {
-                  text: '✅ Я освободил юзернейм — оповестить покупателя!',
-                  callback_data: `released_${tx.id}_${buyerId}`,
-                },
-              ]],
-            },
-          }
-        );
-      }
+      // Продавец
+      await bot.telegram.sendMessage(
+        tx.seller_id,
+        `💰 <b>Твой юзернейм куплен!</b>\n\n` +
+        `Юзернейм: <code>@${listing.username}</code>\n` +
+        `Сумма: <b>${payment.total_amount} ⭐</b>\n\n` +
+        `<b>Как передать покупателю:</b>\n` +
+        `1. Настройки → Редактировать профиль\n` +
+        `2. Удали <code>${listing.username}</code> и сохрани\n` +
+        `3. Нажми кнопку ниже ⬇️`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [[{
+              text: '✅ Я освободил юзернейм — оповестить покупателя!',
+              callback_data: `released_${tx.id}_${buyerId}`,
+            }]],
+          },
+        }
+      );
     } catch (err) {
-      console.error('Payment processing error:', err);
+      console.error('Payment error:', err);
     }
   });
 
-  // Продавец нажал "Освободил" — мгновенно оповещаем покупателя
+  // Продавец освободил юзернейм → мгновенно оповещаем покупателя
   bot.action(/^released_(\d+)_(\d+)$/, async (ctx) => {
-    const txId = parseInt(ctx.match[1]);
+    const txId    = parseInt(ctx.match[1]);
     const buyerId = parseInt(ctx.match[2]);
 
-    await ctx.answerCbQuery('Покупатель оповещён!');
+    await ctx.answerCbQuery('Покупатель оповещён! ✅');
 
-    const tx = db.get('transactions').find({ id: txId }).value();
-    if (!tx) return;
-
+    const tx      = db.get('transactions').find({ id: txId }).value();
     const listing = db.get('listings').find({ id: tx.listing_id }).value();
-    const seller = ctx.from;
 
-    // Убираем кнопку у продавца
     await ctx.editMessageText(
-      `✅ <b>Покупатель оповещён!</b>\n\n` +
-      `Юзернейм <code>@${listing.username}</code> освобождён.\n` +
-      `Ждём подтверждения от покупателя...`,
+      `✅ <b>Покупатель оповещён!</b>\n\nЮзернейм <code>@${listing.username}</code> освобождён.\nОжидаем подтверждения...`,
       { parse_mode: 'HTML' }
     );
 
-    // ── Покупатель: сигнал "ХВАТАЙ СЕЙЧАС" ──
     await bot.telegram.sendMessage(
       buyerId,
       `🚨 <b>СЕЙЧАС! Хватай юзернейм!</b>\n\n` +
       `Продавец только что освободил <code>@${listing.username}</code>\n\n` +
-      `👉 Немедленно:\n` +
-      `Настройки → Редактировать профиль → Имя пользователя → <code>${listing.username}</code> → Сохранить\n\n` +
+      `👉 Немедленно:\nНастройки → Редактировать профиль → Имя пользователя → <code>${listing.username}</code> → Сохранить\n\n` +
       `У тебя есть несколько секунд ⚡`,
       {
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '✅ Получил юзернейм!', callback_data: `confirmed_${txId}_${tx.seller_id}` },
+            { text: '✅ Получил!',  callback_data: `confirmed_${txId}_${tx.seller_id}` },
             { text: '❌ Не успел', callback_data: `failed_${txId}_${tx.seller_id}` },
           ]],
         },
@@ -300,82 +243,62 @@ function createBot(webappUrl) {
     );
   });
 
-  // Покупатель подтвердил получение
+  // Покупатель подтвердил
   bot.action(/^confirmed_(\d+)_(\d+)$/, async (ctx) => {
-    const txId = parseInt(ctx.match[1]);
+    const txId     = parseInt(ctx.match[1]);
     const sellerId = parseInt(ctx.match[2]);
 
     await ctx.answerCbQuery('🎉 Поздравляем!');
-
-    const tx = db.get('transactions').find({ id: txId }).value();
-    const listing = db.get('listings').find({ id: tx.listing_id }).value();
+    const listing = db.get('listings').find({
+      id: db.get('transactions').find({ id: txId }).value()?.listing_id,
+    }).value();
 
     await ctx.editMessageText(
-      `🎉 <b>Сделка завершена!</b>\n\n` +
-      `Юзернейм <code>@${listing.username}</code> твой!\n` +
-      `Спасибо за покупку в Username Market 🏪`,
+      `🎉 <b>Сделка завершена!</b>\n\nЮзернейм <code>@${listing?.username}</code> твой!\nСпасибо за покупку 🏪`,
       { parse_mode: 'HTML' }
     );
-
     await bot.telegram.sendMessage(
       sellerId,
-      `🎉 <b>Сделка успешно завершена!</b>\n\n` +
-      `Покупатель подтвердил получение <code>@${listing.username}</code>.\n` +
-      `Спасибо за продажу! 💰`,
+      `🎉 <b>Сделка завершена!</b>\n\nПокупатель подтвердил получение <code>@${listing?.username}</code>. Спасибо! 💰`,
       { parse_mode: 'HTML' }
     );
   });
 
   // Покупатель не успел
   bot.action(/^failed_(\d+)_(\d+)$/, async (ctx) => {
-    const txId = parseInt(ctx.match[1]);
+    const txId     = parseInt(ctx.match[1]);
     const sellerId = parseInt(ctx.match[2]);
 
-    await ctx.answerCbQuery('Не переживай, разберёмся');
+    await ctx.answerCbQuery('Разберёмся');
 
-    const adminIds = (process.env.ADMIN_IDS || '').split(',').map(Number);
-    const tx = db.get('transactions').find({ id: txId }).value();
-    const listing = db.get('listings').find({ id: tx.listing_id }).value();
+    const tx      = db.get('transactions').find({ id: txId }).value();
+    const listing = db.get('listings').find({ id: tx?.listing_id }).value();
+    db.get('transactions').find({ id: txId }).assign({ status: 'disputed' }).write();
+
+    const adminIds = (process.env.ADMIN_IDS || '').split(',').map(Number).filter(Boolean);
 
     await ctx.editMessageText(
-      `😔 <b>Не успел перехватить юзернейм.</b>\n\n` +
-      `Это бывает — кто-то мог взять @${listing.username} раньше.\n\n` +
-      `Администратор уже уведомлён и разберётся с ситуацией.\n` +
-      `Ожидай сообщения.`,
+      `😔 <b>Не успел.</b>\n\nАдминистратор уже уведомлён и разберётся с ситуацией. Ожидай сообщения.`,
       { parse_mode: 'HTML' }
     );
-
-    // Уведомляем продавца
     await bot.telegram.sendMessage(
       sellerId,
-      `⚠️ <b>Покупатель сообщил, что не успел получить юзернейм.</b>\n\n` +
-      `Юзернейм: <code>@${listing.username}</code>\n` +
-      `Транзакция #${txId}\n\n` +
-      `Свяжитесь с администратором для решения ситуации.`,
+      `⚠️ Покупатель не успел получить @${listing?.username}. Свяжитесь с администратором.`,
       { parse_mode: 'HTML' }
     );
-
-    // Уведомляем всех администраторов
     for (const adminId of adminIds) {
-      if (!adminId) continue;
       await bot.telegram.sendMessage(
         adminId,
-        `🚨 <b>Проблема с передачей юзернейма!</b>\n\n` +
-        `Юзернейм: <code>@${listing.username}</code>\n` +
-        `Транзакция #${txId}\n` +
-        `Покупатель (ID: ${ctx.from.id}) не получил юзернейм.\n` +
-        `Продавец (ID: ${sellerId})\n\n` +
-        `Нужно разобраться вручную.`,
+        `🚨 <b>Спор!</b> @${listing?.username}\nТранзакция ID: ${txId}\nПокупатель: ${ctx.from.id} | Продавец: ${sellerId}`,
         { parse_mode: 'HTML' }
       );
     }
   });
 
-  // Inline-кнопка для покупки (через deep link)
+  // Inline-кнопка покупки
   bot.action(/^buy_(\d+)$/, async (ctx) => {
-    const listingId = parseInt(ctx.match[1]);
     await ctx.answerCbQuery();
-    await sendInvoiceForListing(ctx, listingId);
+    await sendInvoiceForListing(ctx, ctx.match[1]);
   });
 
   return bot;
