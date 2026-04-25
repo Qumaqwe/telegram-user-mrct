@@ -85,6 +85,12 @@ function createBot(webappUrl) {
     );
   });
 
+  // Проверка прав администратора
+  function isAdmin(userId) {
+    const adminIds = (process.env.ADMIN_IDS || '').split(',').map((id) => parseInt(id.trim()));
+    return adminIds.includes(userId);
+  }
+
   // /help
   bot.command('help', (ctx) => {
     ctx.reply(
@@ -101,6 +107,89 @@ function createBot(webappUrl) {
       `⚠️ После оплаты юзернейм передаётся вручную.`,
       { parse_mode: 'HTML' }
     );
+  });
+
+  // /admin — статистика для администратора
+  bot.command('admin', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) {
+      return ctx.reply('❌ У тебя нет прав администратора');
+    }
+
+    const users = db.get('users').value();
+    const listings = db.get('listings').value();
+    const transactions = db.get('transactions').value();
+
+    const activeListings = listings.filter((l) => l.status === 'active').length;
+    const soldListings = listings.filter((l) => l.status === 'sold').length;
+    const completedTx = transactions.filter((t) => t.status === 'completed');
+    const totalVolume = completedTx.reduce((sum, t) => sum + t.amount, 0);
+
+    await ctx.reply(
+      `👑 <b>Панель администратора</b>\n\n` +
+      `👥 Пользователей: <b>${users.length}</b>\n` +
+      `📋 Объявлений всего: <b>${listings.length}</b>\n` +
+      `  • Активных: <b>${activeListings}</b>\n` +
+      `  • Продано: <b>${soldListings}</b>\n\n` +
+      `💳 Сделок завершено: <b>${completedTx.length}</b>\n` +
+      `💰 Оборот: <b>${totalVolume.toLocaleString()} ⭐</b>\n\n` +
+      `Команды:\n` +
+      `/stats — подробная статистика\n` +
+      `/recent — последние 5 сделок\n` +
+      `/delisting [id] — снять объявление`,
+      { parse_mode: 'HTML' }
+    );
+  });
+
+  // /stats — расширенная статистика
+  bot.command('stats', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) return;
+
+    const transactions = db.get('transactions').value();
+    const pending = transactions.filter((t) => t.status === 'pending');
+    const completed = transactions.filter((t) => t.status === 'completed');
+
+    await ctx.reply(
+      `📊 <b>Расширенная статистика</b>\n\n` +
+      `⏳ Ожидают оплаты: <b>${pending.length}</b>\n` +
+      `✅ Завершены: <b>${completed.length}</b>\n` +
+      `💰 Оборот: <b>${completed.reduce((s, t) => s + t.amount, 0).toLocaleString()} ⭐</b>`,
+      { parse_mode: 'HTML' }
+    );
+  });
+
+  // /recent — последние сделки
+  bot.command('recent', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) return;
+
+    const recent = db.get('transactions')
+      .value()
+      .filter((t) => t.status === 'completed')
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 5);
+
+    if (!recent.length) return ctx.reply('Нет завершённых сделок');
+
+    const lines = recent.map((t) => {
+      const listing = db.get('listings').find({ id: t.listing_id }).value();
+      return `• @${listing?.username || '?'} — ${t.amount} ⭐`;
+    });
+
+    await ctx.reply(`🕓 <b>Последние сделки:</b>\n\n${lines.join('\n')}`, { parse_mode: 'HTML' });
+  });
+
+  // /delisting [id] — снять объявление
+  bot.command('delisting', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) return;
+
+    const args = ctx.message.text.split(' ');
+    const id = parseInt(args[1]);
+    if (!id) return ctx.reply('Использование: /delisting [id объявления]');
+
+    const listing = db.get('listings').find({ id }).value();
+    if (!listing) return ctx.reply(`❌ Объявление #${id} не найдено`);
+
+    db.get('listings').find({ id }).assign({ status: 'cancelled' }).write();
+    await ctx.reply(`✅ Объявление @${listing.username} (#${id}) снято с продажи`);
   });
 
   // Обработчик pre-checkout для Stars
