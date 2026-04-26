@@ -33,7 +33,7 @@ export default function Home() {
       {/* Header */}
       <div style={{ marginBottom: '16px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px' }}>
-          🏪 Username Market
+          🏪 Market
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
           Покупай и продавай Telegram-юзернеймы
