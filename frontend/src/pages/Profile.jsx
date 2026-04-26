@@ -9,34 +9,34 @@ export default function Profile() {
   const { user, tg } = useTelegram();
 
   useEffect(() => {
-    getMe()
-      .then((res) => setData(res.data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    getMe().then((res) => setData(res.data)).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  const stats = {
-    active: data?.listings?.filter((l) => l.status === 'active').length || 0,
-    sold: data?.listings?.filter((l) => l.status === 'sold').length || 0,
-    earned: data?.listings?.filter((l) => l.status === 'sold').reduce((sum, l) => sum + l.price, 0) || 0,
-    spent: data?.purchases?.reduce((sum, p) => sum + p.amount, 0) || 0,
-  };
+  const orders   = data?.orders || [];
+  const incoming = data?.incoming_orders || [];
+  const services = data?.services || [];
+
+  const stats = [
+    { label: 'Моих услуг',    value: services.filter((s) => s.status === 'active').length, icon: '💼' },
+    { label: 'Сделано заказов', value: orders.filter((o) => o.status === 'completed').length, icon: '✅' },
+    { label: 'Выполнено',      value: incoming.filter((o) => o.status === 'completed').length, icon: '📦' },
+    { label: 'Заработано',     value: `${(data?.earned || 0).toFixed(2)}`, icon: '💰', sub: 'TON/USDT' },
+  ];
 
   return (
     <div style={{ padding: '16px 16px 90px' }}>
       <div style={{ marginBottom: '20px' }}>
         <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px' }}>👤 Профиль</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Твоя статистика</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Статистика и настройки</p>
       </div>
 
-      {/* User info */}
+      {/* User card */}
       <div className="card" style={{ marginBottom: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{
-            width: '56px', height: '56px', borderRadius: '50%',
-            background: 'var(--accent)', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: '24px', fontWeight: 700, color: '#fff',
-            flexShrink: 0,
+            width: '56px', height: '56px', borderRadius: '50%', background: 'var(--accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '24px', fontWeight: 700, color: '#fff', flexShrink: 0,
           }}>
             {(user?.first_name || 'U')[0].toUpperCase()}
           </div>
@@ -47,6 +47,11 @@ export default function Profile() {
             {user?.username && (
               <div style={{ color: 'var(--accent)', fontSize: '14px' }}>@{user.username}</div>
             )}
+            {data?.rating && (
+              <div style={{ fontSize: '13px', color: '#f5c842', marginTop: '2px' }}>
+                ★ {data.rating} ({data.reviews_count} отзывов)
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -55,50 +60,48 @@ export default function Profile() {
         <div className="loader" />
       ) : (
         <>
-          {/* Stats grid */}
+          {/* Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
-            {[
-              { label: 'Активных', value: stats.active, icon: '📋' },
-              { label: 'Продано', value: stats.sold, icon: '✅' },
-              { label: 'Заработано', value: `⭐ ${stats.earned.toLocaleString()}`, icon: '💰' },
-              { label: 'Потрачено', value: `⭐ ${stats.spent.toLocaleString()}`, icon: '🛒' },
-            ].map((s) => (
+            {stats.map((s) => (
               <div key={s.label} className="card" style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '24px', marginBottom: '4px' }}>{s.icon}</div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent)' }}>{s.value}</div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--accent)' }}>
+                  {s.value}
+                  {s.sub && <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginLeft: '3px' }}>{s.sub}</span>}
+                </div>
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>{s.label}</div>
               </div>
             ))}
           </div>
 
-          {/* Info block */}
-          <div className="card" style={{ marginBottom: '12px' }}>
-            <h3 style={{ fontWeight: 600, marginBottom: '10px', fontSize: '15px' }}>ℹ️ Как работает маркет</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-              <div>🔹 Валюта: <strong style={{ color: 'var(--star)' }}>Telegram Stars (⭐)</strong></div>
-              <div>🔹 Продажа: выставь объявление с ценой</div>
-              <div>🔹 Покупка: найди юзернейм и оплати через бота</div>
-              <div>🔹 Передача: через бота после оплаты</div>
-            </div>
+          {/* CryptoBot notice */}
+          <div className="card" style={{ marginBottom: '12px', border: '1px solid rgba(124,106,247,0.3)' }}>
+            <h3 style={{ fontWeight: 600, marginBottom: '10px', fontSize: '15px' }}>💎 Для получения выплат</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '12px' }}>
+              Выплаты за выполненные заказы отправляются автоматически через <strong>@CryptoBot</strong>.
+              Чтобы получать деньги — убедись, что запустил его.
+            </p>
+            <button className="btn btn-primary btn-full" style={{ fontSize: '14px' }}
+              onClick={() => tg?.openTelegramLink('https://t.me/CryptoBot')}>
+              Открыть @CryptoBot
+            </button>
           </div>
 
-          {/* Links */}
+          {/* How it works */}
           <div className="card">
-            <h3 style={{ fontWeight: 600, marginBottom: '10px', fontSize: '15px' }}>🔗 Полезные ссылки</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <h3 style={{ fontWeight: 600, marginBottom: '10px', fontSize: '15px' }}>ℹ️ Как работает эскроу</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px', color: 'var(--text-secondary)' }}>
               {[
-                { label: '📖 Как передать юзернейм', url: 'https://telegram.org/faq#how-do-i-change-my-username' },
-                { label: '💎 Что такое Telegram Stars', url: 'https://telegram.org/blog/telegram-stars' },
-                { label: '🏷 Fragment (официальный аукцион)', url: 'https://fragment.com' },
-              ].map((l) => (
-                <button
-                  key={l.url}
-                  className="btn btn-secondary"
-                  style={{ justifyContent: 'flex-start', padding: '10px 14px' }}
-                  onClick={() => tg?.openLink(l.url)}
-                >
-                  {l.label}
-                </button>
+                { icon: '🛒', text: 'Покупатель оплачивает заказ через @CryptoBot' },
+                { icon: '🔒', text: 'Деньги заморожены в эскроу до подтверждения' },
+                { icon: '💼', text: 'Исполнитель выполняет и нажимает "Готово"' },
+                { icon: '✅', text: 'Покупатель подтверждает → деньги переводятся автоматически' },
+                { icon: '💰', text: 'Платформа берёт комиссию 5%' },
+              ].map((item) => (
+                <div key={item.text} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '16px', flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ lineHeight: 1.5 }}>{item.text}</span>
+                </div>
               ))}
             </div>
           </div>
