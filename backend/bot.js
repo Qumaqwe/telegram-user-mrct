@@ -67,7 +67,7 @@ function createBot(webappUrl) {
 
     await ctx.reply(
       `👋 Привет, ${ctx.from.first_name}!\n\n` +
-      `🏪 Добро пожаловать в <b>Username Market</b> — маркетплейс Telegram-юзернеймов!\n\n` +
+      `🏪 Добро пожаловать в <b>RareID</b> — платформа для обмена Telegram-никнеймами!\n\n` +
       `Здесь ты можешь:\n` +
       `• 🛒 Купить красивый юзернейм\n` +
       `• 💰 Продать свой юзернейм за Telegram Stars`,
@@ -81,7 +81,7 @@ function createBot(webappUrl) {
   // ─── /help ────────────────────────────────────────────────────────────────────
   bot.command('help', (ctx) => {
     ctx.reply(
-      `📖 <b>Как пользоваться Username Market</b>\n\n` +
+      `📖 <b>Как пользоваться RareID</b>\n\n` +
       `<b>Покупка:</b>\n` +
       `1. Открой маркет кнопкой ниже\n` +
       `2. Найди нужный юзернейм\n` +
