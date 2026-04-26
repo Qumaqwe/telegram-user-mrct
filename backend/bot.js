@@ -70,9 +70,11 @@ function createBot(webappUrl) {
       `🏪 Добро пожаловать в <b>Username Market</b> — маркетплейс Telegram-юзернеймов!\n\n` +
       `Здесь ты можешь:\n` +
       `• 🛒 Купить красивый юзернейм\n` +
-      `• 💰 Продать свой юзернейм за Telegram Stars\n\n` +
-      `Открой маркет через кнопку меню слева от поля ввода.`,
-      { parse_mode: 'HTML' }
+      `• 💰 Продать свой юзернейм за Telegram Stars`,
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.webApp('🏪 Главное меню', webappUrl)]]),
+      }
     );
   });
 
