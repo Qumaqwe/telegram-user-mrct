@@ -4,8 +4,8 @@ import { useTelegram } from './hooks/useTelegram';
 import { useApi } from './hooks/useApi';
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
-import Sell from './pages/Sell';
-import MyListings from './pages/MyListings';
+import CreateService from './pages/CreateService';
+import MyOrders from './pages/MyOrders';
 import Profile from './pages/Profile';
 
 export default function App() {
@@ -13,24 +13,17 @@ export default function App() {
   const { register } = useApi();
 
   useEffect(() => {
-    // Инициализация Telegram WebApp (ready() уже вызван в index.html, но дублируем для надёжности)
-    if (tg) {
-      tg.ready();
-      expand();
-    }
-
-    // Регистрируем пользователя в фоне, не блокируя UI
+    if (tg) { tg.ready(); expand(); }
     register().catch(() => {});
   }, []);
 
-  // Показываем UI сразу — без экрана загрузки
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/sell" element={<Sell />} />
-        <Route path="/my-listings" element={<MyListings />} />
-        <Route path="/profile" element={<Profile />} />
+        <Route path="/"           element={<Home />} />
+        <Route path="/create"     element={<CreateService />} />
+        <Route path="/my-orders"  element={<MyOrders />} />
+        <Route path="/profile"    element={<Profile />} />
       </Routes>
       <Navbar />
     </BrowserRouter>
