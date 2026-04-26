@@ -7,22 +7,22 @@ const db = low(adapter);
 
 db.defaults({
   users: [],
-  listings: [],
-  transactions: [],
-  _nextListingId: 1,
-  _nextTransactionId: 1,
+  services: [],
+  orders: [],
+  reviews: [],
+  _nextServiceId: 1,
+  _nextOrderId: 1,
+  _nextReviewId: 1,
 }).write();
 
-db.getNextListingId = () => {
-  const id = db.get('_nextListingId').value();
-  db.set('_nextListingId', id + 1).write();
+const makeIdGetter = (key) => () => {
+  const id = db.get(key).value();
+  db.set(key, id + 1).write();
   return id;
 };
 
-db.getNextTransactionId = () => {
-  const id = db.get('_nextTransactionId').value();
-  db.set('_nextTransactionId', id + 1).write();
-  return id;
-};
+db.getNextServiceId = makeIdGetter('_nextServiceId');
+db.getNextOrderId   = makeIdGetter('_nextOrderId');
+db.getNextReviewId  = makeIdGetter('_nextReviewId');
 
 module.exports = db;
