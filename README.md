@@ -1,5 +1,5 @@
-# 🏪 RareId — Telegram Mini App
+# 🏪 CoreTalent — Telegram Mini App
 
-Маркетплейс для покупки и продажи Telegram-никнеймов прямо внутри Telegram.
+Фриланс биржа прямо внутри Telegram.
 
 ---
