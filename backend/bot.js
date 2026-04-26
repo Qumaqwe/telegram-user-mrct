@@ -71,11 +71,8 @@ function createBot(webappUrl) {
       `Здесь ты можешь:\n` +
       `• 🛒 Купить красивый юзернейм\n` +
       `• 💰 Продать свой юзернейм за Telegram Stars\n\n` +
-      `Нажми кнопку ниже, чтобы открыть магазин:`,
-      {
-        parse_mode: 'HTML',
-        ...Markup.keyboard([[Markup.button.webApp('🏪 Открыть маркет', webappUrl)]]).resize(),
-      }
+      `Открой маркет через кнопку меню слева от поля ввода.`,
+      { parse_mode: 'HTML' }
     );
   });
 
