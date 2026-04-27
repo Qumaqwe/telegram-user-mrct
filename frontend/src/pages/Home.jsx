@@ -185,13 +185,8 @@ export default function Home() {
         {/* Search + sort */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
           <div style={{ flex: 1, position: 'relative' }}>
-            <span style={{
-              position: 'absolute', left: '12px', top: '50%',
-              transform: 'translateY(-50%)', fontSize: '15px',
-            }}>🔍</span>
             <input
               className="input-field"
-              style={{ paddingLeft: '34px' }}
               placeholder="Поиск услуг..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
