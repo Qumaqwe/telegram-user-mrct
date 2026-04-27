@@ -180,6 +180,9 @@ async function initDb() {
     )
   `);
 
+  // Add pay_url column if it doesn't exist (safe migration)
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS pay_url TEXT`);
+
   console.log('✅ PostgreSQL: таблицы готовы');
 }
 
