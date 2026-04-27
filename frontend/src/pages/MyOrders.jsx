@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useApi } from '../hooks/useApi';
 import { useTelegram } from '../hooks/useTelegram';
 import ServiceCard from '../components/ServiceCard';
@@ -42,7 +42,7 @@ function ContactLink({ username, name, label }) {
   );
 }
 
-function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
+function OrderCard({ order, role, onConfirm, onDispute, onDeliver, onPay, onCheckPayment }) {
   const status = STATUS_LABELS[order.status] || { label: order.status, cls: 'badge-pending' };
   const otherName     = role === 'buyer' ? order.seller_name     : order.buyer_name;
   const otherUsername = role === 'buyer' ? order.seller_username : order.buyer_username;
@@ -85,6 +85,31 @@ function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
           padding: '10px', fontSize: '13px', color: 'var(--text-secondary)',
         }}>
           📋 {order.requirements}
+        </div>
+      )}
+
+      {/* Buyer: pending_payment — re-open payment + check */}
+      {role === 'buyer' && order.status === 'pending_payment' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {order.pay_url ? (
+            <button className="btn btn-primary" onClick={() => onPay(order)}>
+              💳 Оплатить заказ
+            </button>
+          ) : (
+            <div style={{
+              background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
+              padding: '10px', fontSize: '13px', color: 'var(--text-secondary)',
+            }}>
+              ⏳ Ожидает оплаты
+            </div>
+          )}
+          <button
+            className="btn btn-secondary"
+            style={{ fontSize: '13px' }}
+            onClick={() => onCheckPayment(order)}
+          >
+            ✅ Я оплатил — проверить статус
+          </button>
         </div>
       )}
 
@@ -253,8 +278,8 @@ export default function MyOrders() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('services');
   const [confirmModal, setConfirmModal] = useState(null);
-  const { getMyOrders, getMe, deleteService, disputeOrder, deliverOrder } = useApi();
-  const { showAlert, haptic } = useTelegram();
+  const { getMyOrders, getMe, deleteService, disputeOrder, deliverOrder, checkPayment } = useApi();
+  const { showAlert, haptic, tg } = useTelegram();
 
   const fetchData = async () => {
     setLoading(true);
@@ -270,6 +295,28 @@ export default function MyOrders() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  const handlePay = (order) => {
+    if (!order.pay_url) return;
+    if (tg?.openTelegramLink) tg.openTelegramLink(order.pay_url);
+    else window.open(order.pay_url, '_blank');
+  };
+
+  const handleCheckPayment = async (order) => {
+    haptic('medium');
+    try {
+      const res = await checkPayment(order.id);
+      if (res.data.status === 'in_progress') {
+        haptic('heavy');
+        showAlert('✅ Оплата подтверждена! Заказ передан исполнителю.');
+        fetchData();
+      } else {
+        showAlert('Оплата ещё не получена. Оплатите через @CryptoBot и нажмите снова.');
+      }
+    } catch (err) {
+      showAlert(err?.response?.data?.error || 'Ошибка проверки оплаты');
+    }
+  };
 
   const handleDeleteService = async (id) => {
     haptic('medium');
@@ -374,6 +421,8 @@ export default function MyOrders() {
                   <OrderCard key={o.id} order={o} role="buyer"
                     onConfirm={(order) => setConfirmModal(order)}
                     onDispute={handleDispute}
+                    onPay={handlePay}
+                    onCheckPayment={handleCheckPayment}
                   />
                 ))}
               </div>
