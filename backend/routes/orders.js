@@ -44,32 +44,40 @@ async function handleInvoicePaid(invoice) {
   let payload;
   try { payload = JSON.parse(invoice.payload); } catch { return; }
 
-  const order = db.get('orders').find({ id: payload.order_id, status: 'pending_payment' }).value();
-  if (!order) return;
+  // Accept both 'pending_payment' (webhook) and 'in_progress' (manual check fallback)
+  const order = db.get('orders').find({ id: payload.order_id }).value();
+  if (!order || !['pending_payment', 'in_progress'].includes(order.status)) return;
 
-  db.get('orders').find({ id: order.id }).assign({
-    status: 'in_progress',
-    cryptobot_payment_id: invoice.invoice_id,
-    paid_at: new Date().toISOString(),
-  }).write();
+  if (order.status === 'pending_payment') {
+    db.get('orders').find({ id: order.id }).assign({
+      status: 'in_progress',
+      cryptobot_payment_id: invoice.invoice_id,
+      paid_at: new Date().toISOString(),
+    }).write();
+  }
 
   await notifyViaBot(async (bot) => {
     const buyer  = db.get('users').find({ telegram_id: order.buyer_id }).value();
-    const seller = db.get('users').find({ telegram_id: order.seller_id }).value();
 
     await bot.telegram.sendMessage(
       order.buyer_id,
       `✅ <b>Оплата получена!</b>\n\nЗаказ #${order.id}: <b>${order.service_title}</b>\n\nПродавец получил уведомление и приступит к работе. Ждите!`,
       { parse_mode: 'HTML' }
     );
+
+    const sellerUsername = db.get('users').find({ telegram_id: order.seller_id }).value()?.username;
+    const buyerContact = buyer?.username
+      ? `@${buyer.username}`
+      : `<a href="tg://user?id=${order.buyer_id}">${buyer?.first_name || 'Аноним'}</a>`;
+
     await bot.telegram.sendMessage(
       order.seller_id,
       `🎉 <b>Новый заказ #${order.id}!</b>\n\n` +
       `Услуга: <b>${order.service_title}</b>\n` +
-      `Покупатель: ${buyer?.first_name || 'Аноним'}\n` +
+      `Покупатель: ${buyerContact}\n` +
       `Сумма: <b>${order.amount} ${order.currency}</b> (вам: ${order.seller_amount})\n\n` +
       (order.requirements ? `📋 <b>Требования:</b>\n${order.requirements}\n\n` : '') +
-      `Выполните заказ и нажмите кнопку ниже:`,
+      `Выполните заказ, свяжитесь с покупателем и нажмите кнопку ниже:`,
       {
         parse_mode: 'HTML',
         reply_markup: {
@@ -144,13 +152,27 @@ router.post('/create/:serviceId', validateTelegramData, async (req, res) => {
   });
 });
 
+function enrichOrder(order) {
+  const buyer  = db.get('users').find({ telegram_id: order.buyer_id  }).value();
+  const seller = db.get('users').find({ telegram_id: order.seller_id }).value();
+  return {
+    ...order,
+    buyer_name:      buyer?.first_name  || 'Покупатель',
+    buyer_username:  buyer?.username    || null,
+    seller_name:     seller?.first_name || 'Продавец',
+    seller_username: seller?.username   || null,
+  };
+}
+
 // My orders
 router.get('/my', validateTelegramData, (req, res) => {
   const { id } = req.telegramUser;
   const asBuyer  = db.get('orders').filter({ buyer_id: id }).value()
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .map(enrichOrder);
   const asSeller = db.get('orders').filter({ seller_id: id }).value()
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .map(enrichOrder);
   res.json({ as_buyer: asBuyer, as_seller: asSeller });
 });
 
@@ -174,12 +196,10 @@ router.post('/:id/check-payment', validateTelegramData, async (req, res) => {
   try {
     const invoice = await cryptobot.getInvoice(order.cryptobot_invoice_id);
     if (invoice?.status === 'paid') {
-      db.get('orders').find({ id: order.id }).assign({
-        status: 'in_progress',
-        cryptobot_payment_id: invoice.invoice_id,
-        paid_at: new Date().toISOString(),
-      }).write();
-      await handleInvoicePaid({ ...invoice, payload: JSON.stringify({ order_id: order.id }) });
+      await handleInvoicePaid({
+        invoice_id: invoice.invoice_id,
+        payload: JSON.stringify({ order_id: order.id }),
+      });
       return res.json({ status: 'in_progress' });
     }
     res.json({ status: 'pending_payment' });
@@ -187,6 +207,45 @@ router.post('/:id/check-payment', validateTelegramData, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Ошибка проверки оплаты' });
   }
+});
+
+// Seller marks order as delivered
+router.post('/:id/deliver', validateTelegramData, async (req, res) => {
+  const { id } = req.telegramUser;
+  const order = db.get('orders').find({ id: parseInt(req.params.id) }).value();
+  if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+  if (order.seller_id !== id) return res.status(403).json({ error: 'Нет доступа' });
+  if (order.status !== 'in_progress')
+    return res.status(400).json({ error: 'Нельзя отметить в текущем статусе' });
+
+  db.get('orders').find({ id: order.id }).assign({
+    status: 'delivered',
+    delivered_at: new Date().toISOString(),
+  }).write();
+
+  const buyer = db.get('users').find({ telegram_id: order.buyer_id }).value();
+  const sellerName = db.get('users').find({ telegram_id: id }).value()?.first_name || 'Исполнитель';
+
+  await notifyViaBot(async (bot) => {
+    await bot.telegram.sendMessage(
+      order.buyer_id,
+      `📦 <b>Заказ #${order.id} выполнен!</b>\n\n` +
+      `Услуга: <b>${order.service_title}</b>\n` +
+      `Исполнитель: ${sellerName}\n\n` +
+      `Проверь результат и подтверди получение в приложении или нажав кнопку:`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ Принять и оплатить', callback_data: `confirm_${order.id}` },
+            { text: '❌ Открыть спор',       callback_data: `dispute_${order.id}` },
+          ]],
+        },
+      }
+    );
+  });
+
+  res.json({ success: true });
 });
 
 // Buyer confirms delivery → transfer to seller
