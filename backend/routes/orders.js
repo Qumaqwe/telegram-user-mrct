@@ -303,7 +303,12 @@ router.post('/:id/confirm', validateTelegramData, async (req, res) => {
       });
     } catch (err) {
       console.error('Transfer error:', err.message);
-      return res.status(500).json({ error: `Ошибка перевода: ${err.message}` });
+      let msg = `Ошибка перевода: ${err.message}`;
+      if (err.message.includes('AMOUNT_TOO_SMALL'))
+        msg = 'Сумма слишком мала для перевода через CryptoBot (минимум ~$1). Обратитесь к администратору.';
+      if (err.message.includes('USER_NOT_FOUND'))
+        msg = 'Продавец не запускал @CryptoBot. Попросите его написать /start боту t.me/CryptoBot и попробуйте снова.';
+      return res.status(500).json({ error: msg });
     }
 
     await db.updateOne('orders', {
