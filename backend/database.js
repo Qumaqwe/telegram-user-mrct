@@ -1,4 +1,8 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// pg returns BIGINT (int8) as strings by default — parse them as JS numbers.
+// Telegram IDs fit safely in Number (< 2^53).
+types.setTypeParser(20, (val) => parseInt(val, 10));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
