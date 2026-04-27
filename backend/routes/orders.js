@@ -303,7 +303,7 @@ router.post('/:id/confirm', validateTelegramData, async (req, res) => {
       });
     } catch (err) {
       console.error('Transfer error:', err.message);
-      return res.status(500).json({ error: 'Ошибка перевода. Убедитесь, что продавец запустил @CryptoBot.' });
+      return res.status(500).json({ error: `Ошибка перевода: ${err.message}` });
     }
 
     await db.updateOne('orders', {
