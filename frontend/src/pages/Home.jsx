@@ -177,7 +177,7 @@ export default function Home() {
     <div style={{ paddingBottom: '90px' }}>
       {/* Header */}
       <div style={{ padding: '16px 16px 0' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px' }}>🤝 FreelanceBot</h1>
+        <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '4px' }}>FreelanceBot</h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '14px' }}>
           Биржа фриланс-услуг с оплатой в TON/USDT
         </p>
