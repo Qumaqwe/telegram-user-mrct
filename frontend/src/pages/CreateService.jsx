@@ -33,7 +33,8 @@ export default function CreateService() {
     if (!form.category)                           e.category = 'Выберите категорию';
     if (!form.description || form.description.length < 20) e.description = 'Минимум 20 символов';
     const p = parseFloat(form.price);
-    if (!form.price || isNaN(p) || p < 0.1)      e.price = 'Минимум 0.1';
+    const minP = form.currency === 'USDT' ? 2 : 1;
+    if (!form.price || isNaN(p) || p < minP)      e.price = `Минимум ${minP} ${form.currency}`;
     const d = parseInt(form.delivery_days);
     if (!form.delivery_days || isNaN(d) || d < 1 || d > 90) e.delivery_days = '1–90 дней';
     return e;
@@ -146,7 +147,9 @@ export default function CreateService() {
         <div className="input-group">
           <label>Цена *</label>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <input className="input-field" type="number" placeholder="0.5" min="0.1" step="0.01"
+            <input className="input-field" type="number"
+              placeholder={form.currency === 'USDT' ? '2' : '1'}
+              min={form.currency === 'USDT' ? '2' : '1'} step="0.1"
               style={{ flex: 1 }}
               value={form.price} onChange={(e) => set('price', e.target.value)} />
             <div style={{ display: 'flex', background: 'var(--bg-input)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
@@ -168,11 +171,12 @@ export default function CreateService() {
             </div>
           </div>
           {errors.price && <span style={{ color: 'var(--danger)', fontSize: '13px' }}>{errors.price}</span>}
-          {form.price && !isNaN(parseFloat(form.price)) && (
-            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-              Вы получите: <strong>{(parseFloat(form.price) * 0.95).toFixed(4)} {form.currency}</strong> (после комиссии 5%)
-            </span>
-          )}
+          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            Мин. цена: <strong>{form.currency === 'USDT' ? '2 USDT' : '1 TON'}</strong> · Комиссия 5%
+            {form.price && !isNaN(parseFloat(form.price)) && (
+              <> · Вы получите: <strong>{(parseFloat(form.price) * 0.95).toFixed(2)} {form.currency}</strong></>
+            )}
+          </span>
         </div>
 
         {/* Delivery days */}
