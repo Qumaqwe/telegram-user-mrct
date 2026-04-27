@@ -109,9 +109,14 @@ function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
 
       {/* Seller: mark delivered */}
       {role === 'seller' && order.status === 'in_progress' && (
-        <button className="btn btn-primary" onClick={() => onDeliver(order)}>
-          ✅ Заказ выполнен — уведомить покупателя
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+            Выполни заказ, свяжись с покупателем и нажми кнопку ниже:
+          </div>
+          <button className="btn btn-primary" onClick={() => onDeliver(order)}>
+            ✅ Заказ выполнен — уведомить покупателя
+          </button>
+        </div>
       )}
 
       {/* Seller: waiting for buyer confirm */}
@@ -124,25 +129,43 @@ function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
         </div>
       )}
 
-      {/* Buyer: confirm or dispute */}
+      {/* Buyer: delivered — confirm or dispute */}
       {role === 'buyer' && order.status === 'delivered' && (
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-primary" style={{ flex: 2 }} onClick={() => onConfirm(order)}>
-            ✅ Принять и оплатить
-          </button>
-          <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => onDispute(order)}>
-            ❌ Спор
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{
+            background: 'var(--accent-light)', borderRadius: 'var(--radius-sm)',
+            padding: '10px', fontSize: '13px', textAlign: 'center',
+          }}>
+            📦 Исполнитель отметил заказ выполненным. Проверь результат!
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-primary" style={{ flex: 2 }} onClick={() => onConfirm(order)}>
+              ✅ Принять и оплатить
+            </button>
+            <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => onDispute(order)}>
+              ❌ Спор
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Buyer: in progress hint */}
+      {/* Buyer: in_progress — can confirm early or dispute */}
       {role === 'buyer' && order.status === 'in_progress' && (
-        <div style={{
-          background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
-          padding: '10px', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center',
-        }}>
-          🔨 Исполнитель работает над заказом
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{
+            background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
+            padding: '10px', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center',
+          }}>
+            🔨 Исполнитель работает над заказом
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-primary" style={{ flex: 2 }} onClick={() => onConfirm(order)}>
+              ✅ Подтвердить выполнение
+            </button>
+            <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => onDispute(order)}>
+              ❌ Спор
+            </button>
+          </div>
         </div>
       )}
     </div>
