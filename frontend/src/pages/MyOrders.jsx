@@ -12,15 +12,33 @@ const STATUS_LABELS = {
   refunded:        { label: '↩️ Возврат',          cls: 'badge-sold' },
 };
 
-function OrderCard({ order, role, onConfirm, onDispute }) {
+function ContactLink({ username, userId, name, label }) {
+  const { tg } = useTelegram();
+  const href = username ? `https://t.me/${username}` : `tg://user?id=${userId}`;
+  return (
+    <button
+      className="btn btn-secondary"
+      style={{ fontSize: '12px', padding: '6px 10px' }}
+      onClick={() => tg ? tg.openTelegramLink(href) : window.open(href, '_blank')}
+    >
+      💬 Написать {label || name}
+    </button>
+  );
+}
+
+function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
   const status = STATUS_LABELS[order.status] || { label: order.status, cls: 'badge-pending' };
+  const otherName = role === 'buyer' ? order.seller_name : order.buyer_name;
+  const otherUsername = role === 'buyer' ? order.seller_username : order.buyer_username;
+  const otherId = role === 'buyer' ? order.seller_id : order.buyer_id;
+
   return (
     <div className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>{order.service_title}</div>
           <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-            {role === 'buyer' ? `Продавец: ${order.seller_name}` : `Покупатель: ${order.buyer_name}`}
+            {role === 'buyer' ? `Исполнитель: ${otherName}` : `Покупатель: ${otherName}`}
           </div>
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -45,6 +63,32 @@ function OrderCard({ order, role, onConfirm, onDispute }) {
         </div>
       )}
 
+      {/* Contact button — always visible when order is active */}
+      {['in_progress', 'delivered', 'disputed'].includes(order.status) && (
+        <ContactLink
+          username={otherUsername}
+          userId={otherId}
+          name={otherName}
+          label={role === 'buyer' ? 'исполнителя' : 'заказчика'}
+        />
+      )}
+
+      {/* Seller actions */}
+      {role === 'seller' && order.status === 'in_progress' && (
+        <button className="btn btn-primary" onClick={() => onDeliver(order)}>
+          ✅ Заказ выполнен — уведомить покупателя
+        </button>
+      )}
+
+      {role === 'seller' && order.status === 'delivered' && (
+        <div style={{
+          background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
+          padding: '10px', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center',
+        }}>
+          ⏳ Ожидаем подтверждения от покупателя...
+        </div>
+      )}
+
       {/* Buyer actions */}
       {role === 'buyer' && order.status === 'delivered' && (
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -54,6 +98,15 @@ function OrderCard({ order, role, onConfirm, onDispute }) {
           <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => onDispute(order)}>
             ❌ Спор
           </button>
+        </div>
+      )}
+
+      {role === 'buyer' && order.status === 'in_progress' && (
+        <div style={{
+          background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
+          padding: '10px', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center',
+        }}>
+          🔨 Исполнитель работает над заказом. Свяжитесь с ним для уточнений.
         </div>
       )}
     </div>
@@ -141,7 +194,7 @@ export default function MyOrders() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('services');
   const [confirmModal, setConfirmModal] = useState(null);
-  const { getMyOrders, getMe, deleteService, disputeOrder } = useApi();
+  const { getMyOrders, getMe, deleteService, disputeOrder, deliverOrder } = useApi();
   const { showAlert, haptic } = useTelegram();
 
   const fetchData = async () => {
@@ -166,6 +219,17 @@ export default function MyOrders() {
       fetchData();
     } catch (err) {
       showAlert(err?.response?.data?.error || 'Ошибка удаления');
+    }
+  };
+
+  const handleDeliver = async (order) => {
+    haptic('medium');
+    try {
+      await deliverOrder(order.id);
+      showAlert('📦 Покупатель уведомлён о выполнении заказа!');
+      fetchData();
+    } catch (err) {
+      showAlert(err?.response?.data?.error || 'Ошибка');
     }
   };
 
@@ -268,7 +332,7 @@ export default function MyOrders() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {sellerOrders.map((o) => (
                   <OrderCard key={o.id} order={o} role="seller"
-                    onConfirm={() => {}} onDispute={handleDispute}
+                    onConfirm={() => {}} onDispute={handleDispute} onDeliver={handleDeliver}
                   />
                 ))}
               </div>
