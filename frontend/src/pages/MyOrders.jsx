@@ -12,41 +12,65 @@ const STATUS_LABELS = {
   refunded:        { label: '↩️ Возврат',          cls: 'badge-sold' },
 };
 
-function ContactLink({ username, userId, name, label }) {
+function ContactLink({ username, name, label }) {
   const { tg } = useTelegram();
-  const href = username ? `https://t.me/${username}` : `tg://user?id=${userId}`;
+
+  if (!username) {
+    return (
+      <div style={{
+        fontSize: '12px', color: 'var(--text-secondary)',
+        padding: '6px 10px', background: 'var(--bg-input)',
+        borderRadius: 'var(--radius-sm)',
+      }}>
+        💬 {label || name}: нет username — свяжитесь через бота
+      </div>
+    );
+  }
+
   return (
     <button
       className="btn btn-secondary"
       style={{ fontSize: '12px', padding: '6px 10px' }}
-      onClick={() => tg ? tg.openTelegramLink(href) : window.open(href, '_blank')}
+      onClick={() => {
+        const url = `https://t.me/${username}`;
+        if (tg?.openTelegramLink) tg.openTelegramLink(url);
+        else window.open(url, '_blank');
+      }}
     >
-      💬 Написать {label || name}
+      💬 Написать @{username}
     </button>
   );
 }
 
 function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
   const status = STATUS_LABELS[order.status] || { label: order.status, cls: 'badge-pending' };
-  const otherName = role === 'buyer' ? order.seller_name : order.buyer_name;
+  const otherName     = role === 'buyer' ? order.seller_name     : order.buyer_name;
   const otherUsername = role === 'buyer' ? order.seller_username : order.buyer_username;
-  const otherId = role === 'buyer' ? order.seller_id : order.buyer_id;
+  const showContact   = !['completed', 'refunded'].includes(order.status);
 
   return (
     <div className="card fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>{order.service_title}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>
+            {order.service_title}
+          </div>
           <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
             {role === 'buyer' ? `Исполнитель: ${otherName}` : `Покупатель: ${otherName}`}
+            {otherUsername && (
+              <span style={{ color: 'var(--accent)', marginLeft: '4px' }}>@{otherUsername}</span>
+            )}
           </div>
         </div>
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '8px' }}>
           <div style={{ fontWeight: 700, color: 'var(--accent)' }}>{order.amount} {order.currency}</div>
           <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>#{order.id}</div>
         </div>
       </div>
 
+      {/* Status + date */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <span className={`badge ${status.cls}`}>{status.label}</span>
         <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
@@ -54,6 +78,7 @@ function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
         </span>
       </div>
 
+      {/* Requirements */}
       {order.requirements && (
         <div style={{
           background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
@@ -63,23 +88,33 @@ function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
         </div>
       )}
 
-      {/* Contact button — always visible when order is active */}
-      {['in_progress', 'delivered', 'disputed'].includes(order.status) && (
+      {/* Seller: pending_payment hint */}
+      {role === 'seller' && order.status === 'pending_payment' && (
+        <div style={{
+          background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
+          padding: '10px', fontSize: '13px', color: 'var(--text-secondary)',
+        }}>
+          ⏳ Ожидаем оплаты от покупателя. Вам поступит уведомление после оплаты.
+        </div>
+      )}
+
+      {/* Contact button */}
+      {showContact && (
         <ContactLink
           username={otherUsername}
-          userId={otherId}
           name={otherName}
           label={role === 'buyer' ? 'исполнителя' : 'заказчика'}
         />
       )}
 
-      {/* Seller actions */}
+      {/* Seller: mark delivered */}
       {role === 'seller' && order.status === 'in_progress' && (
         <button className="btn btn-primary" onClick={() => onDeliver(order)}>
           ✅ Заказ выполнен — уведомить покупателя
         </button>
       )}
 
+      {/* Seller: waiting for buyer confirm */}
       {role === 'seller' && order.status === 'delivered' && (
         <div style={{
           background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
@@ -89,7 +124,7 @@ function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
         </div>
       )}
 
-      {/* Buyer actions */}
+      {/* Buyer: confirm or dispute */}
       {role === 'buyer' && order.status === 'delivered' && (
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-primary" style={{ flex: 2 }} onClick={() => onConfirm(order)}>
@@ -101,12 +136,13 @@ function OrderCard({ order, role, onConfirm, onDispute, onDeliver }) {
         </div>
       )}
 
+      {/* Buyer: in progress hint */}
       {role === 'buyer' && order.status === 'in_progress' && (
         <div style={{
           background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
           padding: '10px', fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center',
         }}>
-          🔨 Исполнитель работает над заказом. Свяжитесь с ним для уточнений.
+          🔨 Исполнитель работает над заказом
         </div>
       )}
     </div>
