@@ -23,7 +23,7 @@ function createBot(webappUrl) {
     await upsertUser(ctx.from);
     await ctx.reply(
       `👋 Привет, <b>${ctx.from.first_name}</b>!\n\n` +
-      `🤝 Добро пожаловать в <b>FreelanceBot</b> — биржа фриланс-услуг с оплатой в TON/USDT через @CryptoBot.\n\n` +
+      `🤝 Добро пожаловать в <b>CoreTalent</b> — биржа фриланс-услуг с оплатой в TON/USDT через @CryptoBot.\n\n` +
       `• 🛒 Найди исполнителя для своего проекта\n` +
       `• 💼 Предложи свои услуги и зарабатывай\n` +
       `• 🔒 Безопасная оплата через эскроу\n\n` +
@@ -38,7 +38,7 @@ function createBot(webappUrl) {
   // /help
   bot.command('help', (ctx) => {
     ctx.reply(
-      `📖 <b>Как работает FreelanceBot</b>\n\n` +
+      `📖 <b>Как работает CoreTalent</b>\n\n` +
       `<b>Заказчик:</b>\n` +
       `1. Открой маркет, найди нужную услугу\n` +
       `2. Нажми "Заказать" — оплати через @CryptoBot\n` +
@@ -207,7 +207,7 @@ function createBot(webappUrl) {
     await ctx.answerCbQuery('🎉 Оплата переведена!');
     await ctx.editMessageText(
       `🎉 <b>Заказ #${orderId} завершён!</b>\n\n` +
-      `<b>${order.seller_amount} ${order.currency}</b> переведены исполнителю через @CryptoBot.\n\nСпасибо за использование FreelanceBot!`,
+      `<b>${order.seller_amount} ${order.currency}</b> переведены исполнителю через @CryptoBot.\n\nСпасибо за использование CoreTalent!`,
       { parse_mode: 'HTML' }
     );
 
