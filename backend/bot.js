@@ -1,5 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
-const db = require('./database');
+const { db } = require('./database');
 
 function createBot(webappUrl) {
   const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -8,28 +8,19 @@ function createBot(webappUrl) {
     return (process.env.ADMIN_IDS || '').split(',').map((id) => parseInt(id.trim())).includes(userId);
   }
 
-  function upsertUser(from) {
-    const existing = db.get('users').find({ telegram_id: from.id }).value();
-    if (existing) {
-      db.get('users').find({ telegram_id: from.id }).assign({
-        username: from.username || null,
-        first_name: from.first_name || null,
-        last_name: from.last_name || null,
-      }).write();
-    } else {
-      db.get('users').push({
-        telegram_id: from.id,
-        username: from.username || null,
-        first_name: from.first_name || null,
-        last_name: from.last_name || null,
-        created_at: new Date().toISOString(),
-      }).write();
-    }
+  async function upsertUser(from) {
+    await db.query(
+      `INSERT INTO users (telegram_id, username, first_name, last_name)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (telegram_id) DO UPDATE
+         SET username = $2, first_name = $3, last_name = $4`,
+      [from.id, from.username || null, from.first_name || null, from.last_name || null]
+    );
   }
 
   // /start
   bot.start(async (ctx) => {
-    upsertUser(ctx.from);
+    await upsertUser(ctx.from);
     await ctx.reply(
       `👋 Привет, <b>${ctx.from.first_name}</b>!\n\n` +
       `🤝 Добро пожаловать в <b>FreelanceBot</b> — биржа фриланс-услуг с оплатой в TON/USDT через @CryptoBot.\n\n` +
@@ -68,9 +59,11 @@ function createBot(webappUrl) {
   bot.command('admin', async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
 
-    const users    = db.get('users').value();
-    const services = db.get('services').value();
-    const orders   = db.get('orders').value();
+    const [users, services, orders] = await Promise.all([
+      db.findMany('users',    {}),
+      db.findMany('services', {}),
+      db.findMany('orders',   {}),
+    ]);
     const completed = orders.filter((o) => o.status === 'completed');
     const volume    = completed.reduce((s, o) => s + o.amount, 0);
     const disputed  = orders.filter((o) => o.status === 'disputed').length;
@@ -90,16 +83,16 @@ function createBot(webappUrl) {
   // Seller marks order as delivered
   bot.action(/^deliver_(\d+)$/, async (ctx) => {
     const orderId = parseInt(ctx.match[1]);
-    const order = db.get('orders').find({ id: orderId }).value();
+    const order = await db.findOne('orders', { id: orderId });
 
     if (!order) return ctx.answerCbQuery('Заказ не найден');
     if (order.seller_id !== ctx.from.id) return ctx.answerCbQuery('Нет доступа');
-    if (!['in_progress'].includes(order.status)) return ctx.answerCbQuery('Нельзя обновить статус');
+    if (order.status !== 'in_progress') return ctx.answerCbQuery('Нельзя обновить статус');
 
-    db.get('orders').find({ id: orderId }).assign({
-      status: 'delivered',
+    await db.updateOne('orders', {
+      status:       'delivered',
       delivered_at: new Date().toISOString(),
-    }).write();
+    }, { id: orderId });
 
     await ctx.answerCbQuery('✅ Покупатель уведомлён!');
     await ctx.editMessageText(
@@ -117,7 +110,7 @@ function createBot(webappUrl) {
         reply_markup: {
           inline_keyboard: [[
             { text: '✅ Принять и оплатить', callback_data: `confirm_${orderId}` },
-            { text: '❌ Открыть спор', callback_data: `dispute_${orderId}` },
+            { text: '❌ Открыть спор',       callback_data: `dispute_${orderId}` },
           ]],
         },
       }
@@ -127,7 +120,7 @@ function createBot(webappUrl) {
   // Buyer confirms delivery → trigger transfer
   bot.action(/^confirm_(\d+)$/, async (ctx) => {
     const orderId = parseInt(ctx.match[1]);
-    const order = db.get('orders').find({ id: orderId }).value();
+    const order = await db.findOne('orders', { id: orderId });
 
     if (!order) return ctx.answerCbQuery('Заказ не найден');
     if (order.buyer_id !== ctx.from.id) return ctx.answerCbQuery('Нет доступа');
@@ -136,24 +129,22 @@ function createBot(webappUrl) {
     const cryptobot = require('./cryptobot');
     try {
       await cryptobot.transfer({
-        userId: order.seller_id,
-        asset: order.currency,
-        amount: order.seller_amount,
+        userId:  order.seller_id,
+        asset:   order.currency,
+        amount:  order.seller_amount,
         spendId: `order_${orderId}`,
         comment: `Оплата за заказ #${orderId}: ${order.service_title}`,
       });
     } catch (err) {
       console.error('Transfer error:', err.message);
       await ctx.answerCbQuery('Ошибка перевода');
-      return ctx.reply(
-        `❌ Ошибка перевода средств.\n\nУбедитесь, что продавец запустил @CryptoBot.\nОбратитесь к администратору.`
-      );
+      return ctx.reply(`❌ Ошибка перевода средств.\n\nУбедитесь, что продавец запустил @CryptoBot.\nОбратитесь к администратору.`);
     }
 
-    db.get('orders').find({ id: orderId }).assign({
-      status: 'completed',
+    await db.updateOne('orders', {
+      status:       'completed',
       completed_at: new Date().toISOString(),
-    }).write();
+    }, { id: orderId });
 
     await ctx.answerCbQuery('🎉 Оплата переведена!');
     await ctx.editMessageText(
@@ -175,15 +166,15 @@ function createBot(webappUrl) {
   // Buyer opens dispute
   bot.action(/^dispute_(\d+)$/, async (ctx) => {
     const orderId = parseInt(ctx.match[1]);
-    const order = db.get('orders').find({ id: orderId }).value();
+    const order = await db.findOne('orders', { id: orderId });
 
     if (!order) return ctx.answerCbQuery('Заказ не найден');
     if (order.buyer_id !== ctx.from.id) return ctx.answerCbQuery('Нет доступа');
 
-    db.get('orders').find({ id: orderId }).assign({
-      status: 'disputed',
+    await db.updateOne('orders', {
+      status:      'disputed',
       disputed_at: new Date().toISOString(),
-    }).write();
+    }, { id: orderId });
 
     await ctx.answerCbQuery('Спор открыт');
     await ctx.editMessageText(
