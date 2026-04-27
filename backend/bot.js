@@ -138,7 +138,7 @@ function createBot(webappUrl) {
     } catch (err) {
       console.error('Transfer error:', err.message);
       await ctx.answerCbQuery('Ошибка перевода');
-      return ctx.reply(`❌ Ошибка перевода средств.\n\nУбедитесь, что продавец запустил @CryptoBot.\nОбратитесь к администратору.`);
+      return ctx.reply(`❌ Ошибка перевода:\n<code>${err.message}</code>\n\nОбратитесь к администратору.`, { parse_mode: 'HTML' });
     }
 
     await db.updateOne('orders', {
