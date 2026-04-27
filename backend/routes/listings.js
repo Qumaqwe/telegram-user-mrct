@@ -1,23 +1,25 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../database');
+const { db } = require('../database');
 const { validateTelegramData } = require('../middleware/auth');
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { search, sort = 'newest', minPrice, maxPrice } = req.query;
-    let listings = db.get('listings').filter({ status: 'active' }).value();
+    let listings = await db.findMany('listings', { status: 'active' });
 
-    listings = listings.map((l) => {
-      const seller = db.get('users').find({ telegram_id: l.seller_id }).value();
-      return { ...l, first_name: seller?.first_name || null, seller_username: seller?.username || null };
-    });
+    listings = await Promise.all(
+      listings.map(async (l) => {
+        const seller = await db.findOne('users', { telegram_id: l.seller_id });
+        return { ...l, first_name: seller?.first_name || null, seller_username: seller?.username || null };
+      })
+    );
 
-    if (search) listings = listings.filter((l) => l.username.toLowerCase().includes(search.toLowerCase()));
+    if (search)   listings = listings.filter((l) => l.username.toLowerCase().includes(search.toLowerCase()));
     if (minPrice) listings = listings.filter((l) => l.price >= parseInt(minPrice));
     if (maxPrice) listings = listings.filter((l) => l.price <= parseInt(maxPrice));
 
-    if (sort === 'price_asc')  listings.sort((a, b) => a.price - b.price);
+    if (sort === 'price_asc')       listings.sort((a, b) => a.price - b.price);
     else if (sort === 'price_desc') listings.sort((a, b) => b.price - a.price);
     else listings.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -28,51 +30,67 @@ router.get('/', (req, res) => {
   }
 });
 
-router.get('/:id', (req, res) => {
-  const listing = db.get('listings').find({ id: parseInt(req.params.id) }).value();
-  if (!listing) return res.status(404).json({ error: 'Объявление не найдено' });
-  const seller = db.get('users').find({ telegram_id: listing.seller_id }).value();
-  res.json({ ...listing, first_name: seller?.first_name || null, seller_username: seller?.username || null });
+router.get('/:id', async (req, res) => {
+  try {
+    const listing = await db.findOne('listings', { id: parseInt(req.params.id) });
+    if (!listing) return res.status(404).json({ error: 'Объявление не найдено' });
+    const seller = await db.findOne('users', { telegram_id: listing.seller_id });
+    res.json({ ...listing, first_name: seller?.first_name || null, seller_username: seller?.username || null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
 });
 
-router.post('/', validateTelegramData, (req, res) => {
-  const { id } = req.telegramUser;
-  const { username, description, price } = req.body;
+router.post('/', validateTelegramData, async (req, res) => {
+  try {
+    const { id } = req.telegramUser;
+    const { username, description, price } = req.body;
 
-  if (!username || !price) return res.status(400).json({ error: 'Укажите юзернейм и цену' });
+    if (!username || !price) return res.status(400).json({ error: 'Укажите юзернейм и цену' });
 
-  const usernameRegex = /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/;
-  if (!usernameRegex.test(username))
-    return res.status(400).json({ error: 'Неверный формат юзернейма. 5–32 символа, только буквы, цифры и _' });
+    const usernameRegex = /^[a-zA-Z][a-zA-Z0-9_]{4,31}$/;
+    if (!usernameRegex.test(username))
+      return res.status(400).json({ error: 'Неверный формат юзернейма. 5–32 символа, только буквы, цифры и _' });
 
-  const priceNum = parseInt(price);
-  if (isNaN(priceNum) || priceNum < 1 || priceNum > 1_000_000)
-    return res.status(400).json({ error: 'Цена: от 1 до 1 000 000 звёзд' });
+    const priceNum = parseInt(price);
+    if (isNaN(priceNum) || priceNum < 1 || priceNum > 1_000_000)
+      return res.status(400).json({ error: 'Цена: от 1 до 1 000 000 звёзд' });
 
-  const exists = db.get('listings').find((l) => l.username === username.toLowerCase() && l.status === 'active').value();
-  if (exists) return res.status(409).json({ error: 'Этот юзернейм уже выставлен на продажу' });
+    const exists = await db.findOne('listings', { username: username.toLowerCase(), status: 'active' });
+    if (exists) return res.status(409).json({ error: 'Этот юзернейм уже выставлен на продажу' });
 
-  const user = db.get('users').find({ telegram_id: id }).value();
-  if (!user) return res.status(401).json({ error: 'Сначала зарегистрируйтесь' });
+    if (!await db.findOne('users', { telegram_id: id }))
+      return res.status(401).json({ error: 'Сначала зарегистрируйтесь' });
 
-  const newListing = {
-    id: db.getNextListingId(),
-    seller_id: id, username: username.toLowerCase(),
-    description: description || null, price: priceNum,
-    status: 'active', created_at: new Date().toISOString(),
-  };
-  db.get('listings').push(newListing).write();
-  res.json({ success: true, listing: newListing });
+    const listing = await db.insertOne('listings', {
+      seller_id:   id,
+      username:    username.toLowerCase(),
+      description: description || null,
+      price:       priceNum,
+      status:      'active',
+      created_at:  new Date().toISOString(),
+    });
+    res.json({ success: true, listing });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
 });
 
-router.delete('/:id', validateTelegramData, (req, res) => {
-  const { id } = req.telegramUser;
-  const listing = db.get('listings').find({ id: parseInt(req.params.id) }).value();
-  if (!listing) return res.status(404).json({ error: 'Объявление не найдено' });
-  if (listing.seller_id !== id) return res.status(403).json({ error: 'Нет доступа' });
-  if (listing.status !== 'active') return res.status(400).json({ error: 'Нельзя удалить это объявление' });
-  db.get('listings').find({ id: parseInt(req.params.id) }).assign({ status: 'cancelled' }).write();
-  res.json({ success: true });
+router.delete('/:id', validateTelegramData, async (req, res) => {
+  try {
+    const { id } = req.telegramUser;
+    const listing = await db.findOne('listings', { id: parseInt(req.params.id) });
+    if (!listing) return res.status(404).json({ error: 'Объявление не найдено' });
+    if (listing.seller_id !== id) return res.status(403).json({ error: 'Нет доступа' });
+    if (listing.status !== 'active') return res.status(400).json({ error: 'Нельзя удалить это объявление' });
+    await db.updateOne('listings', { status: 'cancelled' }, { id: parseInt(req.params.id) });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
 });
 
 module.exports = router;
