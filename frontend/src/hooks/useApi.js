@@ -31,6 +31,7 @@ export function useApi() {
     getMyOrders:   ()                => api.get('/orders/my'),
     getOrder:      (id)              => api.get(`/orders/${id}`),
     checkPayment:  (id)              => api.post(`/orders/${id}/check-payment`),
+    deliverOrder:  (id)              => api.post(`/orders/${id}/deliver`),
     confirmOrder:  (id, data)        => api.post(`/orders/${id}/confirm`, data),
     disputeOrder:  (id, data)        => api.post(`/orders/${id}/dispute`, data),
   };
