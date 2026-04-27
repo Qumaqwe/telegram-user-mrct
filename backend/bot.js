@@ -23,7 +23,7 @@ function createBot(webappUrl) {
     await upsertUser(ctx.from);
     await ctx.reply(
       `👋 Привет, <b>${ctx.from.first_name}</b>!\n\n` +
-      `🤝 Добро пожаловать в <b>CoreTalent</b> — биржа фриланс-услуг с оплатой в TON/USDT через @CryptoBot.\n\n` +
+      `Добро пожаловать в <b>CoreTalent</b> — биржа фриланс-услуг с оплатой в TON/USDT через @CryptoBot.\n\n` +
       `• 🛒 Найди исполнителя для своего проекта\n` +
       `• 💼 Предложи свои услуги и зарабатывай\n` +
       `• 🔒 Безопасная оплата через эскроу\n\n` +
