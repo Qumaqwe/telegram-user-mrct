@@ -80,6 +80,64 @@ function createBot(webappUrl) {
     );
   });
 
+  // Admin: /cancel <order_id> — force-close order without transfer
+  bot.command('cancel', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
+    const parts = ctx.message.text.trim().split(/\s+/);
+    const orderId = parseInt(parts[1]);
+    if (!orderId) return ctx.reply('Использование: /cancel <id_заказа>');
+
+    const order = await db.findOne('orders', { id: orderId });
+    if (!order) return ctx.reply(`Заказ #${orderId} не найден`);
+
+    await db.updateOne('orders', {
+      status:      'refunded',
+      refunded_at: new Date().toISOString(),
+    }, { id: orderId });
+
+    await ctx.reply(
+      `✅ Заказ #${orderId} принудительно закрыт (refunded).\n\n` +
+      `Услуга: ${order.service_title}\n` +
+      `Сумма: ${order.amount} ${order.currency}\n` +
+      `Покупатель ID: ${order.buyer_id}\n` +
+      `Продавец ID: ${order.seller_id}`
+    );
+
+    // Notify buyer
+    try {
+      await ctx.telegram.sendMessage(
+        order.buyer_id,
+        `ℹ️ Заказ #${orderId} (<b>${order.service_title}</b>) был закрыт администратором.\n` +
+        `По вопросам возврата средств обращайтесь к администратору.`,
+        { parse_mode: 'HTML' }
+      );
+    } catch {}
+  });
+
+  // Admin: /orders — list recent orders with status
+  bot.command('orders', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
+    const orders = await db.findMany('orders', {}, 'created_at DESC');
+    const recent = orders.slice(0, 10);
+    if (!recent.length) return ctx.reply('Заказов нет');
+
+    const STATUS = {
+      pending_payment: '⏳',
+      in_progress: '🔨',
+      delivered: '📦',
+      completed: '✅',
+      disputed: '⚠️',
+      refunded: '↩️',
+    };
+
+    const text = recent.map((o) =>
+      `${STATUS[o.status] || '?'} #${o.id} — ${o.service_title}\n` +
+      `   ${o.amount} ${o.currency} · ${o.status}`
+    ).join('\n\n');
+
+    await ctx.reply(`📋 <b>Последние 10 заказов:</b>\n\n${text}\n\nДля отмены: /cancel &lt;id&gt;`, { parse_mode: 'HTML' });
+  });
+
   // Seller marks order as delivered
   bot.action(/^deliver_(\d+)$/, async (ctx) => {
     const orderId = parseInt(ctx.match[1]);
