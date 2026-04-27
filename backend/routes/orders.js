@@ -142,7 +142,10 @@ router.post('/create/:serviceId', validateTelegramData, async (req, res) => {
       return res.status(500).json({ error: `Ошибка создания счёта: ${err.message}` });
     }
 
-    await db.updateOne('orders', { cryptobot_invoice_id: invoice.invoice_id }, { id: order.id });
+    await db.updateOne('orders', {
+      cryptobot_invoice_id: invoice.invoice_id,
+      pay_url:              invoice.pay_url,
+    }, { id: order.id });
 
     res.json({
       success:  true,
