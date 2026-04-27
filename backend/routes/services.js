@@ -86,8 +86,9 @@ router.post('/', validateTelegramData, async (req, res) => {
       return res.status(400).json({ error: 'Валюта: TON или USDT' });
 
     const priceNum = parseFloat(price);
-    if (isNaN(priceNum) || priceNum < 0.1)
-      return res.status(400).json({ error: 'Минимальная цена: 0.1 TON / USDT' });
+    const minPrice = currency === 'USDT' ? 2 : 1;
+    if (isNaN(priceNum) || priceNum < minPrice)
+      return res.status(400).json({ error: `Минимальная цена: ${minPrice} ${currency} (ограничение CryptoBot — мин. перевод $1)` });
 
     const daysNum = parseInt(delivery_days);
     if (isNaN(daysNum) || daysNum < 1 || daysNum > 90)
