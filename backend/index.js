@@ -5,6 +5,7 @@ const { initDb } = require('./database');
 const { createBot } = require('./bot');
 const botInstance = require('./botInstance');
 const { generalLimiter } = require('./middleware/rateLimit');
+const { startScheduler } = require('./scheduler');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -58,6 +59,7 @@ initDb()
       };
 
       launchBot();
+      startScheduler(bot);
       process.once('SIGINT',  () => bot.stop('SIGINT'));
       process.once('SIGTERM', () => bot.stop('SIGTERM'));
     } else {
