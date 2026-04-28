@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../database');
 const { validateTelegramData, requireAdmin } = require('../middleware/auth');
-const { escapeHtml, notifyViaBot } = require('../utils');
+const { escapeHtml, notifyViaBot, logger } = require('../utils');
 
 router.use(validateTelegramData, requireAdmin);
 
@@ -39,6 +39,7 @@ router.get('/stats', async (req, res) => {
     });
   } catch (err) {
     console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -48,6 +49,7 @@ router.get('/orders', async (req, res) => {
     const orders = await db.findMany('orders', {});
     res.json(orders);
   } catch (err) {
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -61,6 +63,7 @@ router.get('/services', async (req, res) => {
     }));
     res.json(enriched);
   } catch (err) {
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -72,6 +75,7 @@ router.delete('/services/:id', async (req, res) => {
     await db.updateOne('services', { status: 'deleted' }, { id: parseInt(req.params.id) });
     res.json({ success: true });
   } catch (err) {
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -86,6 +90,7 @@ router.get('/users', async (req, res) => {
     })));
     res.json(enriched);
   } catch (err) {
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -106,6 +111,7 @@ router.post('/orders/:id/refund', async (req, res) => {
         comment: `Возврат по заказу #${order.id}`,
       });
     } catch (err) {
+      logger.error('Refund transfer error', { msg: err.message });
       return res.status(500).json({ error: `Ошибка перевода: ${err.message}` });
     }
 
@@ -127,6 +133,7 @@ router.post('/orders/:id/refund', async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
