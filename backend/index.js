@@ -4,12 +4,14 @@ const cors = require('cors');
 const { initDb } = require('./database');
 const { createBot } = require('./bot');
 const botInstance = require('./botInstance');
+const { generalLimiter } = require('./middleware/rateLimit');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const WEBAPP_URL = process.env.WEBAPP_URL || 'http://localhost:5173';
 
 app.use(cors());
+app.use('/api', generalLimiter);
 
 // Webhook needs raw body — register before express.json()
 app.use('/api/orders/webhook', require('./routes/orders'));
