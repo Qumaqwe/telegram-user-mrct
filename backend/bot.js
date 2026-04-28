@@ -155,6 +155,42 @@ function createBot(webappUrl) {
     }
   });
 
+  // /user <user_id> — информация о пользователе
+  bot.command('user', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
+
+    const parts = ctx.message.text.trim().split(/\s+/);
+    const userId = parseInt(parts[1]);
+    if (!userId) return ctx.reply('Использование: /user <user_id>');
+
+    const [user, servicesCount, ordersAsBuyer, ordersAsSeller] = await Promise.all([
+      db.findOne('users', { telegram_id: userId }),
+      db.count('services', { seller_id: userId, status: 'active' }),
+      db.count('orders',   { buyer_id:  userId }),
+      db.count('orders',   { seller_id: userId }),
+    ]);
+
+    if (!user) return ctx.reply(`❌ Пользователь ${userId} не найден в базе`);
+
+    const name     = [user.first_name, user.last_name].filter(Boolean).join(' ');
+    const username = user.username ? `@${escapeHtml(user.username)}` : 'не указан';
+    const banLine  = user.is_banned
+      ? `🚫 <b>Заблокирован</b>${user.ban_reason ? `: ${escapeHtml(user.ban_reason)}` : ''}`
+      : `✅ Активен`;
+
+    await ctx.reply(
+      `👤 <b>Пользователь #${userId}</b>\n\n` +
+      `Имя: ${escapeHtml(name) || 'не указано'}\n` +
+      `Username: ${username}\n` +
+      `Зарегистрирован: ${new Date(user.created_at).toLocaleDateString('ru-RU')}\n\n` +
+      `💼 Активных услуг: <b>${servicesCount}</b>\n` +
+      `🛒 Заказов (покупатель): <b>${ordersAsBuyer}</b>\n` +
+      `📦 Заказов (продавец): <b>${ordersAsSeller}</b>\n\n` +
+      `Статус: ${banLine}`,
+      { parse_mode: 'HTML' }
+    );
+  });
+
   // /ban <user_id> [причина]
   bot.command('ban', async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
@@ -246,7 +282,13 @@ function createBot(webappUrl) {
       `📦 Заказов всего: <b>${orders.length}</b>\n` +
       `✅ Завершено: <b>${completed.length}</b>\n` +
       `🚨 Споров: <b>${disputed}</b>\n` +
-      `💰 Оборот: <b>${volume.toFixed(2)} TON/USDT</b>`,
+      `💰 Оборот: <b>${volume.toFixed(2)} TON/USDT</b>\n\n` +
+      `<b>━━━ Команды ━━━</b>\n` +
+      `/orders — последние 10 заказов\n` +
+      `/cancel &lt;id&gt; — закрыть заказ и вернуть деньги\n` +
+      `/user &lt;id&gt; — информация о пользователе\n` +
+      `/ban &lt;id&gt; [причина] — заблокировать\n` +
+      `/unban &lt;id&gt; — разблокировать`,
       { parse_mode: 'HTML' }
     );
   });
