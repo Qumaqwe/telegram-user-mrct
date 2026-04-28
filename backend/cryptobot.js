@@ -8,6 +8,17 @@ const api = axios.create({
   headers: { 'Crypto-Pay-API-Token': process.env.CRYPTOBOT_TOKEN },
 });
 
+// Strip the API token from error objects before they can reach any logger.
+// axios attaches the full request config (including headers) to errors —
+// without this interceptor the token could appear in stack traces or logs.
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.config?.headers) delete err.config.headers['Crypto-Pay-API-Token'];
+    return Promise.reject(err);
+  }
+);
+
 // Extract meaningful error from axios error or CryptoBot ok:false response
 function extractError(err) {
   if (err.response) {
