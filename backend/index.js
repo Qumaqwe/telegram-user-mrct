@@ -13,9 +13,15 @@ const WEBAPP_URL = process.env.WEBAPP_URL || 'http://localhost:5173';
 app.use(cors());
 app.use('/api', generalLimiter);
 
-// Webhook needs raw body — register before express.json()
-app.use('/api/orders/webhook', require('./routes/orders'));
-app.use(express.json());
+// Webhook needs the raw body for HMAC verification; everything else uses JSON.
+// Single conditional middleware avoids mounting the orders router twice.
+app.use((req, res, next) => {
+  if (req.path === '/api/orders/webhook') {
+    express.raw({ type: 'application/json' })(req, res, next);
+  } else {
+    express.json()(req, res, next);
+  }
+});
 
 app.use('/api/users',    require('./routes/users'));
 app.use('/api/services', require('./routes/services'));
