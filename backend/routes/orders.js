@@ -352,4 +352,42 @@ router.post('/:id/dispute', validateTelegramData, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Buyer cancels unpaid order
+// ---------------------------------------------------------------------------
+router.post('/:id/cancel', validateTelegramData, async (req, res) => {
+  try {
+    const { id } = req.telegramUser;
+    const order = await db.findOne('orders', { id: parseInt(req.params.id) });
+
+    if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+    if (order.buyer_id !== id) return res.status(403).json({ error: 'Нет доступа' });
+    if (order.status !== 'pending_payment')
+      return res.status(400).json({
+        error: 'Отменить можно только неоплаченный заказ. Если заказ уже оплачен — откройте спор.',
+      });
+
+    await db.updateOne('orders', {
+      status:       'cancelled',
+      cancelled_at: new Date().toISOString(),
+    }, { id: order.id });
+
+    // Notify buyer with hint to report if something was wrong
+    await notifyViaBot(async (bot) => {
+      await bot.telegram.sendMessage(
+        order.buyer_id,
+        `❌ <b>Заказ #${order.id} отменён.</b>\n\n` +
+        `Услуга: <b>${escapeHtml(order.service_title)}</b>\n\n` +
+        `Если у вас были проблемы с продавцом или его услуга нарушает правила — сообщите нам:\n/report`,
+        { parse_mode: 'HTML' }
+      );
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Route error', { msg: err.message });
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 module.exports = router;
