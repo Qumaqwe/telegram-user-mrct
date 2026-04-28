@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../database');
 const { validateTelegramData } = require('../middleware/auth');
+const { createContentLimiter } = require('../middleware/rateLimit');
 
 const CATEGORIES = ['design', 'dev', 'copywriting', 'marketing', 'translation', 'video', 'other'];
 const COMMISSION = 0.05;
+const MAX_ACTIVE_SERVICES = 10;
 
 async function enrichService(s) {
   const seller  = await db.findOne('users', { telegram_id: s.seller_id });
@@ -71,7 +73,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', validateTelegramData, async (req, res) => {
+router.post('/', validateTelegramData, createContentLimiter, async (req, res) => {
   try {
     const { id } = req.telegramUser;
     const { title, description, category, price, currency = 'TON', delivery_days } = req.body;
@@ -96,6 +98,10 @@ router.post('/', validateTelegramData, async (req, res) => {
 
     if (!await db.findOne('users', { telegram_id: id }))
       return res.status(401).json({ error: 'Сначала зарегистрируйтесь' });
+
+    const activeCount = await db.count('services', { seller_id: id, status: 'active' });
+    if (activeCount >= MAX_ACTIVE_SERVICES)
+      return res.status(400).json({ error: `Нельзя иметь более ${MAX_ACTIVE_SERVICES} активных услуг` });
 
     const service = await db.insertOne('services', {
       seller_id:     id,
