@@ -3,7 +3,7 @@ const router = express.Router();
 const { db } = require('../database');
 const { validateTelegramData } = require('../middleware/auth');
 const cryptobot = require('../cryptobot');
-const { escapeHtml, notifyViaBot } = require('../utils');
+const { escapeHtml, notifyViaBot, logger } = require('../utils');
 const { completeOrder } = require('../escrow');
 const { createOrderLimiter, checkPaymentLimiter } = require('../middleware/rateLimit');
 
@@ -26,10 +26,10 @@ router.post('/webhook', async (req, res) => {
       await handleInvoicePaid(body.payload);
     }
     res.json({ ok: true });
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).json({ error: 'Webhook processing failed' });
-  }
+    } catch (err) {
+      logger.error('Webhook processing error', { msg: err.message });
+      res.status(500).json({ error: 'Webhook processing failed' });
+    }
 });
 
 async function handleInvoicePaid(invoice) {
@@ -131,7 +131,7 @@ router.post('/create/:serviceId', validateTelegramData, createOrderLimiter, asyn
     } catch (err) {
       // Remove the placeholder order on invoice failure
       await db.query('DELETE FROM orders WHERE id = $1', [order.id]);
-      console.error('CryptoBot invoice error:', err.message);
+      logger.error('CryptoBot invoice error', { msg: err.message });
       return res.status(500).json({ error: `Ошибка создания счёта: ${err.message}` });
     }
 
@@ -148,7 +148,7 @@ router.post('/create/:serviceId', validateTelegramData, createOrderLimiter, asyn
       currency: service.currency,
     });
   } catch (err) {
-    console.error(err);
+    logger.error('Create order error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -181,7 +181,7 @@ router.get('/my', validateTelegramData, async (req, res) => {
       as_seller: await Promise.all(asSeller.map(enrich)),
     });
   } catch (err) {
-    console.error(err);
+    logger.error('My orders error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -198,7 +198,7 @@ router.get('/:id', validateTelegramData, async (req, res) => {
       return res.status(403).json({ error: 'Нет доступа' });
     res.json(order);
   } catch (err) {
-    console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -224,7 +224,7 @@ router.post('/:id/check-payment', validateTelegramData, checkPaymentLimiter, asy
     }
     res.json({ status: 'pending_payment' });
   } catch (err) {
-    console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка проверки оплаты' });
   }
 });
@@ -268,7 +268,7 @@ router.post('/:id/deliver', validateTelegramData, async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -289,7 +289,7 @@ router.post('/:id/confirm', validateTelegramData, async (req, res) => {
     try {
       await completeOrder(order.id, { rating, comment });
     } catch (err) {
-      console.error('Transfer error:', err.message);
+      logger.error('Transfer error (API confirm)', { msg: err.message });
       let msg = `Ошибка перевода: ${err.message}`;
       if (err.message.includes('AMOUNT_TOO_SMALL'))
         msg = 'Сумма слишком мала для перевода через CryptoBot (минимум ~$1). Обратитесь к администратору.';
@@ -300,7 +300,7 @@ router.post('/:id/confirm', validateTelegramData, async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -347,7 +347,7 @@ router.post('/:id/dispute', validateTelegramData, async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
