@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../database');
 const { validateTelegramData, requireAdmin } = require('../middleware/auth');
+const { escapeHtml, notifyViaBot } = require('../utils');
 
 router.use(validateTelegramData, requireAdmin);
 
@@ -112,6 +113,17 @@ router.post('/orders/:id/refund', async (req, res) => {
       status:      'refunded',
       refunded_at: new Date().toISOString(),
     }, { id: order.id });
+
+    await notifyViaBot(async (bot) => {
+      await bot.telegram.sendMessage(
+        order.buyer_id,
+        `✅ <b>Возврат по заказу #${order.id}</b>\n\n` +
+        `Услуга: <b>${escapeHtml(order.service_title)}</b>\n` +
+        `Сумма: <b>${order.amount} ${escapeHtml(order.currency)}</b>\n\n` +
+        `Средства переведены на ваш @CryptoBot кошелёк.`,
+        { parse_mode: 'HTML' }
+      );
+    });
 
     res.json({ success: true });
   } catch (err) {
