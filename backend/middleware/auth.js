@@ -9,8 +9,11 @@ function validateTelegramData(req, res, next) {
     return res.status(401).json({ error: 'Нет данных авторизации' });
   }
 
-  // Режим разработки: принимаем только специальный тестовый токен
-  if (process.env.NODE_ENV === 'development' && initData === 'dev_mode') {
+  // Режим разработки: принимаем только специальный тестовый токен.
+  // Требует явного ALLOW_DEV_MODE=true в .env — NODE_ENV недостаточно,
+  // чтобы случайный деплой без NODE_ENV не открыл bypass.
+  if (process.env.ALLOW_DEV_MODE === 'true' && initData === 'dev_mode') {
+    console.warn('⚠️  AUTH: dev_mode bypass использован (ALLOW_DEV_MODE=true)');
     req.telegramUser = { id: 123456789, username: 'testuser', first_name: 'Test', last_name: 'User' };
     return next();
   }
