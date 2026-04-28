@@ -3,6 +3,7 @@ const router = express.Router();
 const { db } = require('../database');
 const { validateTelegramData } = require('../middleware/auth');
 const { createContentLimiter } = require('../middleware/rateLimit');
+const { logger } = require('../utils');
 
 const MAX_ACTIVE_LISTINGS = 10;
 
@@ -28,7 +29,7 @@ router.get('/', validateTelegramData, async (req, res) => {
 
     res.json(listings);
   } catch (err) {
-    console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -40,7 +41,7 @@ router.get('/:id', validateTelegramData, async (req, res) => {
     const seller = await db.findOne('users', { telegram_id: listing.seller_id });
     res.json({ ...listing, first_name: seller?.first_name || null, seller_username: seller?.username || null });
   } catch (err) {
-    console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -83,7 +84,7 @@ router.post('/', validateTelegramData, createContentLimiter, async (req, res) =>
     });
     res.json({ success: true, listing });
   } catch (err) {
-    console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -98,7 +99,7 @@ router.delete('/:id', validateTelegramData, async (req, res) => {
     await db.updateOne('listings', { status: 'cancelled' }, { id: parseInt(req.params.id) });
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
