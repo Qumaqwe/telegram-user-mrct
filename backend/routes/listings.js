@@ -2,8 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../database');
 const { validateTelegramData } = require('../middleware/auth');
+const { createContentLimiter } = require('../middleware/rateLimit');
 
-router.get('/', async (req, res) => {
+const MAX_ACTIVE_LISTINGS = 10;
+
+router.get('/', validateTelegramData, async (req, res) => {
   try {
     const { search, sort = 'newest', minPrice, maxPrice } = req.query;
     let listings = await db.findMany('listings', { status: 'active' });
@@ -30,7 +33,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', validateTelegramData, async (req, res) => {
   try {
     const listing = await db.findOne('listings', { id: parseInt(req.params.id) });
     if (!listing) return res.status(404).json({ error: 'Объявление не найдено' });
@@ -42,7 +45,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', validateTelegramData, async (req, res) => {
+router.post('/', validateTelegramData, createContentLimiter, async (req, res) => {
   try {
     const { id } = req.telegramUser;
     const { username, description, price } = req.body;
@@ -62,6 +65,10 @@ router.post('/', validateTelegramData, async (req, res) => {
 
     if (!await db.findOne('users', { telegram_id: id }))
       return res.status(401).json({ error: 'Сначала зарегистрируйтесь' });
+
+    const activeCount = await db.count('listings', { seller_id: id, status: 'active' });
+    if (activeCount >= MAX_ACTIVE_LISTINGS)
+      return res.status(400).json({ error: `Нельзя иметь более ${MAX_ACTIVE_LISTINGS} активных объявлений` });
 
     const listing = await db.insertOne('listings', {
       seller_id:   id,
