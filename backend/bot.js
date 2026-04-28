@@ -1,7 +1,8 @@
 const { Telegraf, Markup } = require('telegraf');
 const { db } = require('./database');
-const { escapeHtml, logger } = require('./utils');
+const { escapeHtml, logger, notifyViaBot } = require('./utils');
 const { completeOrder } = require('./escrow');
+const cryptobot = require('./cryptobot');
 
 function createBot(webappUrl) {
   const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -85,7 +86,9 @@ function createBot(webappUrl) {
     );
   });
 
-  // Admin: /cancel <order_id> — force-close order without transfer
+  // Admin: /cancel <order_id>
+  // — unpaid orders  (pending_payment): закрыть без перевода
+  // — paid orders    (in_progress / delivered / disputed): вернуть деньги покупателю через CryptoBot
   bot.command('cancel', async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
     const parts = ctx.message.text.trim().split(/\s+/);
@@ -95,25 +98,51 @@ function createBot(webappUrl) {
     const order = await db.findOne('orders', { id: orderId });
     if (!order) return ctx.reply(`Заказ #${orderId} не найден`);
 
+    const TERMINAL = ['completed', 'refunded', 'cancelled'];
+    if (TERMINAL.includes(order.status))
+      return ctx.reply(`⚠️ Заказ #${orderId} уже в финальном статусе: ${order.status}`);
+
+    const PAID_STATUSES = ['in_progress', 'delivered', 'disputed'];
+    const wasPaid = PAID_STATUSES.includes(order.status);
+
+    if (wasPaid) {
+      // Perform actual on-chain refund — spend_id ensures idempotency
+      try {
+        await cryptobot.transfer({
+          userId:  order.buyer_id,
+          asset:   order.currency,
+          amount:  order.amount,
+          spendId: `refund_${orderId}`,
+          comment: `Возврат по заказу #${orderId}`,
+        });
+      } catch (err) {
+        logger.error('Cancel refund transfer error', { msg: err.message });
+        return ctx.reply(
+          `❌ Не удалось вернуть деньги покупателю: ${err.message}\n\n` +
+          `Статус заказа не изменён — попробуйте ещё раз или используйте API:\n` +
+          `POST /api/admin/orders/${orderId}/refund`
+        );
+      }
+    }
+
     await db.updateOne('orders', {
       status:      'refunded',
       refunded_at: new Date().toISOString(),
     }, { id: orderId });
 
     await ctx.reply(
-      `✅ Заказ #${orderId} принудительно закрыт (refunded).\n\n` +
+      `✅ Заказ #${orderId} закрыт${wasPaid ? ' и средства возвращены покупателю' : ''}.\n\n` +
       `Услуга: ${order.service_title}\n` +
       `Сумма: ${order.amount} ${order.currency}\n` +
       `Покупатель ID: ${order.buyer_id}\n` +
       `Продавец ID: ${order.seller_id}`
     );
 
-    // Notify buyer
     try {
       await ctx.telegram.sendMessage(
         order.buyer_id,
-        `ℹ️ Заказ #${orderId} (<b>${escapeHtml(order.service_title)}</b>) был закрыт администратором.\n` +
-        `По вопросам возврата средств обращайтесь к администратору.`,
+        `ℹ️ Заказ #${orderId} (<b>${escapeHtml(order.service_title)}</b>) закрыт администратором.\n` +
+        (wasPaid ? `Средства в размере <b>${order.amount} ${escapeHtml(order.currency)}</b> возвращены на ваш @CryptoBot кошелёк.` : ''),
         { parse_mode: 'HTML' }
       );
     } catch {}
