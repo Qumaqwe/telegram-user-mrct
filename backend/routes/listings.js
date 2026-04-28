@@ -56,6 +56,9 @@ router.post('/', validateTelegramData, createContentLimiter, async (req, res) =>
     if (!usernameRegex.test(username))
       return res.status(400).json({ error: 'Неверный формат юзернейма. 5–32 символа, только буквы, цифры и _' });
 
+    if (description && description.length > 500)
+      return res.status(400).json({ error: 'Описание: не более 500 символов' });
+
     const priceNum = parseInt(price);
     if (isNaN(priceNum) || priceNum < 1 || priceNum > 1_000_000)
       return res.status(400).json({ error: 'Цена: от 1 до 1 000 000 звёзд' });
