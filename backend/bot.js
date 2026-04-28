@@ -33,7 +33,7 @@ function createBot(webappUrl) {
       `<b>Важно:</b>\n` +
       `• Никогда не запрашиваем доступ к личным данным вне платформы\n` +
       `• Все выплаты происходят только после подтверждения сделки\n\n` +
-      `⚠️ Для получения выплат запусти @CryptoBot`,
+      `💵 Для получения выплат запусти @CryptoBot`,
       {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([[Markup.button.webApp('🏪 Открыть маркет', webappUrl)]]),
