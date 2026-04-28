@@ -56,9 +56,53 @@ function createBot(webappUrl) {
       `3. Выполни работу → нажми "Выполнено"\n` +
       `4. После подтверждения — деньги на твоём @CryptoBot\n\n` +
       `<b>Комиссия платформы:</b> 5%\n` +
-      `<b>Валюты:</b> TON, USDT`,
+      `<b>Валюты:</b> TON, USDT\n\n` +
+      `❓ Проблема или нарушение? Напиши /report`,
       { parse_mode: 'HTML' }
     );
+  });
+
+  // /report <текст> — отправить жалобу администратору
+  bot.command('report', async (ctx) => {
+    const text = ctx.message.text.replace(/^\/report\s*/i, '').trim();
+
+    if (!text) {
+      return ctx.reply(
+        `📝 <b>Как отправить жалобу:</b>\n\n` +
+        `/report <i>опишите проблему</i>\n\n` +
+        `Например:\n` +
+        `/report Продавец @username требует оплату вне платформы`,
+        { parse_mode: 'HTML' }
+      );
+    }
+
+    const from = ctx.from;
+    const userLink = from.username
+      ? `@${escapeHtml(from.username)}`
+      : `<a href="tg://user?id=${from.id}">${escapeHtml(from.first_name || 'Пользователь')}</a>`;
+
+    const adminIds = (process.env.ADMIN_IDS || '').split(',').map(Number).filter(Boolean);
+    let sent = 0;
+    for (const adminId of adminIds) {
+      try {
+        await ctx.telegram.sendMessage(
+          adminId,
+          `🚨 <b>Жалоба от пользователя</b>\n\n` +
+          `От: ${userLink} (ID: ${from.id})\n\n` +
+          `<b>Текст жалобы:</b>\n${escapeHtml(text)}`,
+          { parse_mode: 'HTML' }
+        );
+        sent++;
+      } catch {}
+    }
+
+    if (sent > 0) {
+      await ctx.reply(
+        `✅ Жалоба отправлена администратору.\n\nМы рассмотрим её в ближайшее время.`
+      );
+    } else {
+      await ctx.reply(`⚠️ Не удалось отправить жалобу. Попробуйте позже.`);
+    }
   });
 
   // /admin
