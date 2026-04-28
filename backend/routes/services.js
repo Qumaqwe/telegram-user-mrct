@@ -130,7 +130,7 @@ router.delete('/:id', validateTelegramData, async (req, res) => {
     const service = await db.findOne('services', { id: parseInt(req.params.id) });
     if (!service) return res.status(404).json({ error: 'Услуга не найдена' });
     if (service.seller_id !== id) return res.status(403).json({ error: 'Нет доступа' });
-    if (service.status === 'deleted') return res.status(400).json({ error: 'Уже удалено' });
+    if (['deleted', 'hidden'].includes(service.status)) return res.status(400).json({ error: 'Нельзя удалить эту услугу' });
     await db.updateOne('services', { status: 'deleted' }, { id: parseInt(req.params.id) });
     res.json({ success: true });
   } catch (err) {
