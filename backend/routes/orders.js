@@ -3,18 +3,11 @@ const router = express.Router();
 const { db } = require('../database');
 const { validateTelegramData } = require('../middleware/auth');
 const cryptobot = require('../cryptobot');
+const { escapeHtml, notifyViaBot } = require('../utils');
+const { completeOrder } = require('../escrow');
+const { createOrderLimiter, checkPaymentLimiter } = require('../middleware/rateLimit');
 
 const COMMISSION = 0.05;
-
-async function notifyViaBot(fn) {
-  try {
-    const botInstance = require('../botInstance');
-    const bot = botInstance.get();
-    if (bot) await fn(bot);
-  } catch (err) {
-    console.error('Bot notify error:', err.message);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // CryptoBot webhook — no auth, raw body for signature check
@@ -60,21 +53,21 @@ async function handleInvoicePaid(invoice) {
   await notifyViaBot(async (bot) => {
     const buyer = await db.findOne('users', { telegram_id: order.buyer_id });
     const buyerContact = buyer?.username
-      ? `@${buyer.username}`
-      : `<a href="tg://user?id=${order.buyer_id}">${buyer?.first_name || 'Аноним'}</a>`;
+      ? `@${escapeHtml(buyer.username)}`
+      : `<a href="tg://user?id=${order.buyer_id}">${escapeHtml(buyer?.first_name || 'Аноним')}</a>`;
 
     await bot.telegram.sendMessage(
       order.buyer_id,
-      `✅ <b>Оплата получена!</b>\n\nЗаказ #${order.id}: <b>${order.service_title}</b>\n\nПродавец получил уведомление и приступит к работе. Ждите!`,
+      `✅ <b>Оплата получена!</b>\n\nЗаказ #${order.id}: <b>${escapeHtml(order.service_title)}</b>\n\nПродавец получил уведомление и приступит к работе. Ждите!`,
       { parse_mode: 'HTML' }
     );
     await bot.telegram.sendMessage(
       order.seller_id,
       `🎉 <b>Новый заказ #${order.id}!</b>\n\n` +
-      `Услуга: <b>${order.service_title}</b>\n` +
+      `Услуга: <b>${escapeHtml(order.service_title)}</b>\n` +
       `Покупатель: ${buyerContact}\n` +
-      `Сумма: <b>${order.amount} ${order.currency}</b> (вам: ${order.seller_amount})\n\n` +
-      (order.requirements ? `📋 <b>Требования:</b>\n${order.requirements}\n\n` : '') +
+      `Сумма: <b>${order.amount} ${escapeHtml(order.currency)}</b> (вам: ${order.seller_amount})\n\n` +
+      (order.requirements ? `📋 <b>Требования:</b>\n${escapeHtml(order.requirements)}\n\n` : '') +
       `Выполните заказ, свяжитесь с покупателем и нажмите кнопку ниже:`,
       {
         parse_mode: 'HTML',
@@ -92,7 +85,7 @@ async function handleInvoicePaid(invoice) {
 // ---------------------------------------------------------------------------
 // Create order → get CryptoBot invoice
 // ---------------------------------------------------------------------------
-router.post('/create/:serviceId', validateTelegramData, async (req, res) => {
+router.post('/create/:serviceId', validateTelegramData, createOrderLimiter, async (req, res) => {
   try {
     const { id } = req.telegramUser;
     const serviceId = parseInt(req.params.serviceId);
@@ -213,7 +206,7 @@ router.get('/:id', validateTelegramData, async (req, res) => {
 // ---------------------------------------------------------------------------
 // Manual payment check (fallback when webhook not configured)
 // ---------------------------------------------------------------------------
-router.post('/:id/check-payment', validateTelegramData, async (req, res) => {
+router.post('/:id/check-payment', validateTelegramData, checkPaymentLimiter, async (req, res) => {
   try {
     const { id } = req.telegramUser;
     const order = await db.findOne('orders', { id: parseInt(req.params.id) });
@@ -258,8 +251,8 @@ router.post('/:id/deliver', validateTelegramData, async (req, res) => {
       await bot.telegram.sendMessage(
         order.buyer_id,
         `📦 <b>Заказ #${order.id} выполнен!</b>\n\n` +
-        `Услуга: <b>${order.service_title}</b>\n` +
-        `Исполнитель: ${seller?.first_name || 'Исполнитель'}\n\n` +
+        `Услуга: <b>${escapeHtml(order.service_title)}</b>\n` +
+        `Исполнитель: ${escapeHtml(seller?.first_name || 'Исполнитель')}\n\n` +
         `Проверь результат и подтверди получение:`,
         {
           parse_mode: 'HTML',
@@ -294,13 +287,7 @@ router.post('/:id/confirm', validateTelegramData, async (req, res) => {
       return res.status(400).json({ error: 'Нельзя подтвердить в текущем статусе' });
 
     try {
-      await cryptobot.transfer({
-        userId:  order.seller_id,
-        asset:   order.currency,
-        amount:  order.seller_amount,
-        spendId: `order_${order.id}`,
-        comment: `Оплата за заказ #${order.id}: ${order.service_title}`,
-      });
+      await completeOrder(order.id, { rating, comment });
     } catch (err) {
       console.error('Transfer error:', err.message);
       let msg = `Ошибка перевода: ${err.message}`;
@@ -310,32 +297,6 @@ router.post('/:id/confirm', validateTelegramData, async (req, res) => {
         msg = 'Продавец не запускал @CryptoBot. Попросите его написать /start боту t.me/CryptoBot и попробуйте снова.';
       return res.status(500).json({ error: msg });
     }
-
-    await db.updateOne('orders', {
-      status:       'completed',
-      completed_at: new Date().toISOString(),
-    }, { id: order.id });
-
-    if (rating && parseInt(rating) >= 1 && parseInt(rating) <= 5) {
-      await db.insertOne('reviews', {
-        order_id:    order.id,
-        reviewer_id: id,
-        seller_id:   order.seller_id,
-        rating:      parseInt(rating),
-        comment:     comment || null,
-        created_at:  new Date().toISOString(),
-      });
-    }
-
-    await notifyViaBot(async (bot) => {
-      await bot.telegram.sendMessage(
-        order.seller_id,
-        `🎉 <b>Заказ #${order.id} завершён!</b>\n\n` +
-        `<b>${order.seller_amount} ${order.currency}</b> переведены вам через @CryptoBot.\n` +
-        (rating ? `⭐ Оценка: ${rating}/5` : ''),
-        { parse_mode: 'HTML' }
-      );
-    });
 
     res.json({ success: true });
   } catch (err) {
@@ -353,8 +314,8 @@ router.post('/:id/dispute', validateTelegramData, async (req, res) => {
     const { reason } = req.body;
     const order = await db.findOne('orders', { id: parseInt(req.params.id) });
     if (!order) return res.status(404).json({ error: 'Заказ не найден' });
-    if (order.buyer_id !== id && order.seller_id !== id)
-      return res.status(403).json({ error: 'Нет доступа' });
+    if (order.buyer_id !== id)
+      return res.status(403).json({ error: 'Открыть спор может только покупатель' });
     if (!['in_progress', 'delivered'].includes(order.status))
       return res.status(400).json({ error: 'Нельзя открыть спор в текущем статусе' });
 
@@ -370,11 +331,11 @@ router.post('/:id/dispute', validateTelegramData, async (req, res) => {
         await bot.telegram.sendMessage(
           adminId,
           `🚨 <b>Спор по заказу #${order.id}</b>\n\n` +
-          `Услуга: ${order.service_title}\n` +
+          `Услуга: ${escapeHtml(order.service_title)}\n` +
           `Покупатель ID: ${order.buyer_id}\n` +
           `Продавец ID: ${order.seller_id}\n` +
-          `Сумма: ${order.amount} ${order.currency}\n` +
-          (reason ? `\nПричина: ${reason}` : ''),
+          `Сумма: ${order.amount} ${escapeHtml(order.currency)}\n` +
+          (reason ? `\nПричина: ${escapeHtml(reason)}` : ''),
           { parse_mode: 'HTML' }
         );
       }
