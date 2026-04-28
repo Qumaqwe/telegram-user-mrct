@@ -8,7 +8,7 @@
 
 const { db }          = require('./database');
 const cryptobot       = require('./cryptobot');
-const { escapeHtml, notifyViaBot } = require('./utils');
+const { escapeHtml, notifyViaBot, logger } = require('./utils');
 
 /**
  * Завершить заказ: перевести seller_amount продавцу, обновить статус,
@@ -50,7 +50,7 @@ async function completeOrder(orderId, { rating, comment } = {}) {
       rating:      parsedRating,
       comment:     comment || null,
       created_at:  new Date().toISOString(),
-    }).catch((err) => console.error('Review insert error:', err.message));
+    }).catch((err) => logger.error('Review insert error', { msg: err.message }));
   }
 
   await notifyViaBot(async (bot) => {
