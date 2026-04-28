@@ -1,7 +1,8 @@
 const crypto = require('crypto');
+const { db } = require('../database');
 
 // Проверяем, что данные пришли именно из Telegram (защита от мошенников)
-function validateTelegramData(req, res, next) {
+async function validateTelegramData(req, res, next) {
   const initData = req.headers['x-telegram-init-data'];
 
   // Если initData нет совсем — отказываем
@@ -61,6 +62,15 @@ function validateTelegramData(req, res, next) {
     // Базовая проверка — у пользователя должен быть ID
     if (!user || !user.id) {
       return res.status(401).json({ error: 'Неверные данные пользователя' });
+    }
+
+    // Проверка бана
+    const dbUser = await db.findOne('users', { telegram_id: user.id });
+    if (dbUser?.is_banned) {
+      return res.status(403).json({
+        error: 'Ваш аккаунт заблокирован' + (dbUser.ban_reason ? `. Причина: ${dbUser.ban_reason}` : ''),
+        banned: true,
+      });
     }
 
     req.telegramUser = user;
