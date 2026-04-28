@@ -200,8 +200,10 @@ async function initDb() {
     )
   `);
 
-  // Add pay_url column if it doesn't exist (safe migration)
-  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS pay_url TEXT`);
+  // Safe migrations — add columns introduced after initial schema
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS pay_url          TEXT`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_at     TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ`);
 
   console.log('✅ PostgreSQL: таблицы готовы');
 }
