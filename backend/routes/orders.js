@@ -330,6 +330,27 @@ router.post('/:id/dispute', validateTelegramData, async (req, res) => {
     }, { id: order.id });
 
     await notifyViaBot(async (bot) => {
+      // Подтверждение покупателю
+      await bot.telegram.sendMessage(
+        order.buyer_id,
+        `⚠️ <b>Спор открыт по заказу #${order.id}</b>\n\n` +
+        `Услуга: <b>${escapeHtml(order.service_title)}</b>\n\n` +
+        `Администратор рассмотрит ситуацию и свяжется с вами в ближайшее время.` +
+        (reason ? `\n\n<b>Ваша причина:</b> ${escapeHtml(reason)}` : ''),
+        { parse_mode: 'HTML' }
+      ).catch(() => {});
+
+      // Уведомление продавцу
+      await bot.telegram.sendMessage(
+        order.seller_id,
+        `⚠️ <b>Покупатель открыл спор по заказу #${order.id}</b>\n\n` +
+        `Услуга: <b>${escapeHtml(order.service_title)}</b>\n\n` +
+        `Администратор рассмотрит ситуацию и свяжется с вами. ` +
+        `Пожалуйста, не предпринимайте действий вне платформы.`,
+        { parse_mode: 'HTML' }
+      ).catch(() => {});
+
+      // Уведомление администраторам
       const adminIds = (process.env.ADMIN_IDS || '').split(',').map(Number).filter(Boolean);
       for (const adminId of adminIds) {
         await bot.telegram.sendMessage(
@@ -339,7 +360,8 @@ router.post('/:id/dispute', validateTelegramData, async (req, res) => {
           `Покупатель ID: ${order.buyer_id}\n` +
           `Продавец ID: ${order.seller_id}\n` +
           `Сумма: ${order.amount} ${escapeHtml(order.currency)}\n` +
-          (reason ? `\nПричина: ${escapeHtml(reason)}` : ''),
+          (reason ? `\nПричина: ${escapeHtml(reason)}\n` : '') +
+          `\nДля возврата средств: /cancel ${order.id}`,
           { parse_mode: 'HTML' }
         );
       }
