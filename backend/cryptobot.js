@@ -78,9 +78,11 @@ async function getBalance() {
   }
 }
 
-function verifyWebhookSignature(body, signature) {
+// rawBody must be the original request body as a Buffer or string —
+// re-serialising a parsed object would change key order and break the HMAC.
+function verifyWebhookSignature(rawBody, signature) {
   const secret = crypto.createHash('sha256').update(process.env.CRYPTOBOT_TOKEN).digest();
-  const hmac   = crypto.createHmac('sha256', secret).update(JSON.stringify(body)).digest('hex');
+  const hmac   = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
   return hmac === signature;
 }
 
