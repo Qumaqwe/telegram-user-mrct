@@ -155,6 +155,77 @@ function createBot(webappUrl) {
     }
   });
 
+  // /ban <user_id> [причина]
+  bot.command('ban', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
+
+    const parts = ctx.message.text.trim().split(/\s+/);
+    const userId = parseInt(parts[1]);
+    const reason = parts.slice(2).join(' ') || null;
+
+    if (!userId) return ctx.reply('Использование: /ban <user_id> [причина]');
+
+    const user = await db.findOne('users', { telegram_id: userId });
+    if (!user) return ctx.reply(`❌ Пользователь ${userId} не найден`);
+    if (user.is_banned) return ctx.reply(`⚠️ Пользователь ${userId} уже заблокирован`);
+
+    // Блокируем пользователя и скрываем его активные услуги
+    await db.updateOne('users', { is_banned: true, ban_reason: reason }, { telegram_id: userId });
+    await db.query(
+      `UPDATE services SET status = 'hidden' WHERE seller_id = $1 AND status = 'active'`,
+      [userId]
+    );
+
+    // Уведомляем заблокированного
+    try {
+      await ctx.telegram.sendMessage(
+        userId,
+        `🚫 <b>Ваш аккаунт заблокирован</b>\n\n` +
+        (reason ? `Причина: ${escapeHtml(reason)}\n\n` : '') +
+        `Если считаете это ошибкой — напишите /report`,
+        { parse_mode: 'HTML' }
+      );
+    } catch {}
+
+    await ctx.reply(
+      `✅ Пользователь ${userId} заблокирован.\n` +
+      (reason ? `Причина: ${reason}\n` : '') +
+      `Его активные услуги скрыты.`
+    );
+  });
+
+  // /unban <user_id>
+  bot.command('unban', async (ctx) => {
+    if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
+
+    const parts = ctx.message.text.trim().split(/\s+/);
+    const userId = parseInt(parts[1]);
+
+    if (!userId) return ctx.reply('Использование: /unban <user_id>');
+
+    const user = await db.findOne('users', { telegram_id: userId });
+    if (!user) return ctx.reply(`❌ Пользователь ${userId} не найден`);
+    if (!user.is_banned) return ctx.reply(`⚠️ Пользователь ${userId} не заблокирован`);
+
+    // Снимаем блокировку и восстанавливаем услуги
+    await db.updateOne('users', { is_banned: false, ban_reason: null }, { telegram_id: userId });
+    await db.query(
+      `UPDATE services SET status = 'active' WHERE seller_id = $1 AND status = 'hidden'`,
+      [userId]
+    );
+
+    // Уведомляем разблокированного
+    try {
+      await ctx.telegram.sendMessage(
+        userId,
+        `✅ <b>Ваш аккаунт разблокирован</b>\n\nВы снова можете пользоваться платформой.`,
+        { parse_mode: 'HTML' }
+      );
+    } catch {}
+
+    await ctx.reply(`✅ Пользователь ${userId} разблокирован. Его услуги восстановлены.`);
+  });
+
   // /admin
   bot.command('admin', async (ctx) => {
     if (!isAdmin(ctx.from.id)) return ctx.reply('❌ Нет прав');
