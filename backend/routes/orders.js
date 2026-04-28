@@ -115,6 +115,7 @@ router.post('/create/:serviceId', validateTelegramData, createOrderLimiter, asyn
       cryptobot_payment_id: null,
       requirements:         requirements || null,
       service_title:        service.title,
+      delivery_days:        service.delivery_days,
       seller_name:          seller?.first_name || 'Продавец',
       buyer_name:           user.first_name    || 'Покупатель',
       created_at:           new Date().toISOString(),
