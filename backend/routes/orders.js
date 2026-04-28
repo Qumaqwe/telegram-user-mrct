@@ -12,28 +12,25 @@ const COMMISSION = 0.05;
 // ---------------------------------------------------------------------------
 // CryptoBot webhook — no auth, raw body for signature check
 // ---------------------------------------------------------------------------
-router.post(
-  '/webhook',
-  express.raw({ type: 'application/json' }),
-  async (req, res) => {
-    try {
-      const signature = req.headers['crypto-pay-api-signature'];
-      const body = JSON.parse(req.body);
+router.post('/webhook', async (req, res) => {
+  try {
+    const signature = req.headers['crypto-pay-api-signature'];
+    const rawBody   = req.body; // Buffer — provided by selective parser in index.js
 
-      if (!cryptobot.verifyWebhookSignature(body, signature)) {
-        return res.status(401).json({ error: 'Invalid signature' });
-      }
-
-      if (body.update_type === 'invoice_paid') {
-        await handleInvoicePaid(body.payload);
-      }
-      res.json({ ok: true });
-    } catch (err) {
-      console.error('Webhook error:', err);
-      res.status(500).json({ error: 'Webhook processing failed' });
+    if (!cryptobot.verifyWebhookSignature(rawBody, signature)) {
+      return res.status(401).json({ error: 'Invalid signature' });
     }
+
+    const body = JSON.parse(rawBody);
+    if (body.update_type === 'invoice_paid') {
+      await handleInvoicePaid(body.payload);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.status(500).json({ error: 'Webhook processing failed' });
   }
-);
+});
 
 async function handleInvoicePaid(invoice) {
   let payload;
@@ -90,6 +87,9 @@ router.post('/create/:serviceId', validateTelegramData, createOrderLimiter, asyn
     const { id } = req.telegramUser;
     const serviceId = parseInt(req.params.serviceId);
     const { requirements } = req.body;
+
+    if (requirements && requirements.length > 2000)
+      return res.status(400).json({ error: 'Требования к заказу: не более 2000 символов' });
 
     const service = await db.findOne('services', { id: serviceId, status: 'active' });
     if (!service) return res.status(404).json({ error: 'Услуга не найдена или недоступна' });
@@ -312,6 +312,10 @@ router.post('/:id/dispute', validateTelegramData, async (req, res) => {
   try {
     const { id } = req.telegramUser;
     const { reason } = req.body;
+
+    if (reason && reason.length > 1000)
+      return res.status(400).json({ error: 'Причина спора: не более 1000 символов' });
+
     const order = await db.findOne('orders', { id: parseInt(req.params.id) });
     if (!order) return res.status(404).json({ error: 'Заказ не найден' });
     if (order.buyer_id !== id)
