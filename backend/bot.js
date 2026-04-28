@@ -1,6 +1,6 @@
 const { Telegraf, Markup } = require('telegraf');
 const { db } = require('./database');
-const { escapeHtml } = require('./utils');
+const { escapeHtml, logger } = require('./utils');
 const { completeOrder } = require('./escrow');
 
 function createBot(webappUrl) {
@@ -192,7 +192,7 @@ function createBot(webappUrl) {
     try {
       await completeOrder(orderId);
     } catch (err) {
-      console.error('Transfer error:', err.message);
+      logger.error('Transfer error (bot confirm)', { msg: err.message });
       await ctx.answerCbQuery('Ошибка перевода');
       return ctx.reply(
         `❌ Ошибка перевода:\n<code>${escapeHtml(err.message)}</code>\n\nОбратитесь к администратору.`,
