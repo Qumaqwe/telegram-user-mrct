@@ -1,5 +1,7 @@
 const { Telegraf, Markup } = require('telegraf');
 const { db } = require('./database');
+const { escapeHtml } = require('./utils');
+const { completeOrder } = require('./escrow');
 
 function createBot(webappUrl) {
   const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -22,7 +24,7 @@ function createBot(webappUrl) {
   bot.start(async (ctx) => {
     await upsertUser(ctx.from);
     await ctx.reply(
-      `👋 Привет, <b>${ctx.from.first_name}</b>!\n\n` +
+      `👋 Привет, <b>${escapeHtml(ctx.from.first_name)}</b>!\n\n` +
       `Добро пожаловать в <b>CoreTalent</b> — биржа фриланс-услуг с гарантией оплаты в TON/USDT.\n\n` +
       `• 🛒 Найди исполнителя для своего проекта\n` +
       `• 💼 Предложи свои услуги и зарабатывай\n` +
@@ -110,7 +112,7 @@ function createBot(webappUrl) {
     try {
       await ctx.telegram.sendMessage(
         order.buyer_id,
-        `ℹ️ Заказ #${orderId} (<b>${order.service_title}</b>) был закрыт администратором.\n` +
+        `ℹ️ Заказ #${orderId} (<b>${escapeHtml(order.service_title)}</b>) был закрыт администратором.\n` +
         `По вопросам возврата средств обращайтесь к администратору.`,
         { parse_mode: 'HTML' }
       );
@@ -164,7 +166,7 @@ function createBot(webappUrl) {
     await ctx.telegram.sendMessage(
       order.buyer_id,
       `📦 <b>Заказ #${orderId} выполнен!</b>\n\n` +
-      `Услуга: <b>${order.service_title}</b>\n\n` +
+      `Услуга: <b>${escapeHtml(order.service_title)}</b>\n\n` +
       `Исполнитель отметил заказ как выполненный. Проверь результат и подтверди получение:`,
       {
         parse_mode: 'HTML',
@@ -178,7 +180,7 @@ function createBot(webappUrl) {
     );
   });
 
-  // Buyer confirms delivery → trigger transfer
+  // Buyer confirms delivery → trigger transfer (logic lives in escrow.js)
   bot.action(/^confirm_(\d+)$/, async (ctx) => {
     const orderId = parseInt(ctx.match[1]);
     const order = await db.findOne('orders', { id: orderId });
@@ -187,39 +189,21 @@ function createBot(webappUrl) {
     if (order.buyer_id !== ctx.from.id) return ctx.answerCbQuery('Нет доступа');
     if (!['in_progress', 'delivered'].includes(order.status)) return ctx.answerCbQuery('Уже обработано');
 
-    const cryptobot = require('./cryptobot');
     try {
-      await cryptobot.transfer({
-        userId:  order.seller_id,
-        asset:   order.currency,
-        amount:  order.seller_amount,
-        spendId: `order_${orderId}`,
-        comment: `Оплата за заказ #${orderId}: ${order.service_title}`,
-      });
+      await completeOrder(orderId);
     } catch (err) {
       console.error('Transfer error:', err.message);
       await ctx.answerCbQuery('Ошибка перевода');
-      return ctx.reply(`❌ Ошибка перевода:\n<code>${err.message}</code>\n\nОбратитесь к администратору.`, { parse_mode: 'HTML' });
+      return ctx.reply(
+        `❌ Ошибка перевода:\n<code>${escapeHtml(err.message)}</code>\n\nОбратитесь к администратору.`,
+        { parse_mode: 'HTML' }
+      );
     }
-
-    await db.updateOne('orders', {
-      status:       'completed',
-      completed_at: new Date().toISOString(),
-    }, { id: orderId });
 
     await ctx.answerCbQuery('🎉 Оплата переведена!');
     await ctx.editMessageText(
       `🎉 <b>Заказ #${orderId} завершён!</b>\n\n` +
-      `<b>${order.seller_amount} ${order.currency}</b> переведены исполнителю через @CryptoBot.\n\nСпасибо за использование CoreTalent!`,
-      { parse_mode: 'HTML' }
-    );
-
-    await ctx.telegram.sendMessage(
-      order.seller_id,
-      `🎉 <b>Оплата получена!</b>\n\n` +
-      `Заказ #${orderId}: <b>${order.service_title}</b>\n` +
-      `Сумма: <b>${order.seller_amount} ${order.currency}</b>\n\n` +
-      `Деньги переведены на ваш @CryptoBot кошелёк!`,
+      `<b>${order.seller_amount} ${escapeHtml(order.currency)}</b> переведены исполнителю через @CryptoBot.\n\nСпасибо за использование CoreTalent!`,
       { parse_mode: 'HTML' }
     );
   });
@@ -248,10 +232,10 @@ function createBot(webappUrl) {
       await ctx.telegram.sendMessage(
         adminId,
         `🚨 <b>Спор! Заказ #${orderId}</b>\n\n` +
-        `Услуга: ${order.service_title}\n` +
+        `Услуга: ${escapeHtml(order.service_title)}\n` +
         `Покупатель: ${order.buyer_id}\n` +
         `Продавец: ${order.seller_id}\n` +
-        `Сумма: ${order.amount} ${order.currency}`,
+        `Сумма: ${order.amount} ${escapeHtml(order.currency)}`,
         { parse_mode: 'HTML' }
       );
     }
