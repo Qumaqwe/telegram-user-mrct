@@ -4,9 +4,29 @@ const { Pool, types } = require('pg');
 // Telegram IDs fit safely in Number (< 2^53).
 types.setTypeParser(20, (val) => parseInt(val, 10));
 
+// SSL configuration:
+//   - If DATABASE_CA_CERT is set, verify the server certificate against it (secure).
+//   - If DATABASE_SSL_VERIFY=true, enforce verification without a custom CA
+//     (works when the server uses a trusted public CA).
+//   - Otherwise fall back to rejectUnauthorized:false for managed Postgres hosts
+//     that use self-signed certs (e.g. Railway, Render). A warning is logged.
+function buildSslConfig() {
+  if (process.env.DATABASE_CA_CERT) {
+    return { rejectUnauthorized: true, ca: process.env.DATABASE_CA_CERT };
+  }
+  if (process.env.DATABASE_SSL_VERIFY === 'true') {
+    return { rejectUnauthorized: true };
+  }
+  console.warn(
+    '⚠️  PostgreSQL SSL: rejectUnauthorized=false — соединение не проверяет сертификат сервера.\n' +
+    '   Для продакшена задайте DATABASE_CA_CERT или DATABASE_SSL_VERIFY=true.'
+  );
+  return { rejectUnauthorized: false };
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: process.env.DATABASE_URL ? buildSslConfig() : false,
 });
 
 // ---------------------------------------------------------------------------
