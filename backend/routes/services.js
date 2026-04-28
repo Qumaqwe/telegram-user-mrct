@@ -82,6 +82,8 @@ router.post('/', validateTelegramData, createContentLimiter, async (req, res) =>
       return res.status(400).json({ error: 'Заполните все обязательные поля' });
     if (title.length < 5 || title.length > 100)
       return res.status(400).json({ error: 'Заголовок: 5–100 символов' });
+    if (description && description.length > 2000)
+      return res.status(400).json({ error: 'Описание: не более 2000 символов' });
     if (!CATEGORIES.includes(category))
       return res.status(400).json({ error: 'Неверная категория' });
     if (!['TON', 'USDT'].includes(currency))
