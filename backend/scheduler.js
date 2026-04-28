@@ -20,9 +20,10 @@ const cryptobot     = require('./cryptobot');
 const { completeOrder } = require('./escrow');
 const { escapeHtml, logger } = require('./utils');
 
-const CHECK_INTERVAL_MS  = 60 * 60 * 1000; // каждый час
-const AUTO_REFUND_GRACE  = 2 * 24 * 60 * 60 * 1000; // +2 дня после дедлайна
-const AUTO_COMPLETE_WAIT = 3 * 24 * 60 * 60 * 1000; // +3 дня после delivered_at
+const CHECK_INTERVAL_MS    = 60 * 60 * 1000; // каждый час
+const AUTO_REFUND_GRACE    = 2 * 24 * 60 * 60 * 1000; // +2 дня после дедлайна
+const AUTO_COMPLETE_WAIT   = 3 * 24 * 60 * 60 * 1000; // +3 дня после delivered_at
+const PENDING_PAYMENT_TTL  = 30 * 60 * 1000;           // 30 минут — инвойс истекает
 
 // ---------------------------------------------------------------------------
 // 1. Напоминание при истечении срока
@@ -209,12 +210,34 @@ async function checkAutoComplete(bot) {
 }
 
 // ---------------------------------------------------------------------------
+// 4. Автоочистка зависших неоплаченных заказов
+// ---------------------------------------------------------------------------
+async function cleanupStalePendingOrders() {
+  try {
+    const cutoff = new Date(Date.now() - PENDING_PAYMENT_TTL).toISOString();
+    const { rowCount } = await db.query(`
+      UPDATE orders
+      SET status = 'cancelled', cancelled_at = NOW()
+      WHERE status = 'pending_payment'
+        AND created_at < $1
+    `, [cutoff]);
+
+    if (rowCount > 0) {
+      logger.info('Stale pending orders cancelled', { count: rowCount });
+    }
+  } catch (err) {
+    logger.error('cleanupStalePendingOrders error', { msg: err.message });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Точка входа
 // ---------------------------------------------------------------------------
 function startScheduler(bot) {
   logger.info('Scheduler started', { intervalMs: CHECK_INTERVAL_MS });
 
   async function runAll() {
+    await cleanupStalePendingOrders();
     await checkOverdueOrders(bot);
     await checkAutoRefund(bot);
     await checkAutoComplete(bot);
