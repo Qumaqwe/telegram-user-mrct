@@ -31,9 +31,14 @@ app.use('/api/listings', require('./routes/listings'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/admin',    require('./routes/admin'));
 
-app.get('/api/health', (req, res) =>
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
-);
+app.get('/api/health', async (req, res) => {
+  try {
+    await require('./database').db.query('SELECT 1');
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(503).json({ status: 'error', error: 'Database unavailable' });
+  }
+});
 
 initDb()
   .then(() => {
