@@ -338,6 +338,8 @@ function createBot(webappUrl) {
 
     if (!order) return ctx.answerCbQuery('Заказ не найден');
     if (order.buyer_id !== ctx.from.id) return ctx.answerCbQuery('Нет доступа');
+    if (!['in_progress', 'delivered'].includes(order.status))
+      return ctx.answerCbQuery('Спор нельзя открыть в текущем статусе');
 
     await db.updateOne('orders', {
       status:      'disputed',
@@ -346,10 +348,23 @@ function createBot(webappUrl) {
 
     await ctx.answerCbQuery('Спор открыт');
     await ctx.editMessageText(
-      `⚠️ <b>Спор открыт по заказу #${orderId}</b>\n\nАдминистратор разберётся и свяжется с вами.`,
+      `⚠️ <b>Спор открыт по заказу #${orderId}</b>\n\nАдминистратор разберётся и свяжется с вами в ближайшее время.`,
       { parse_mode: 'HTML' }
     );
 
+    // Уведомить продавца
+    try {
+      await ctx.telegram.sendMessage(
+        order.seller_id,
+        `⚠️ <b>Покупатель открыл спор по заказу #${orderId}</b>\n\n` +
+        `Услуга: <b>${escapeHtml(order.service_title)}</b>\n\n` +
+        `Администратор рассмотрит ситуацию и свяжется с вами. ` +
+        `Пожалуйста, не предпринимайте действий вне платформы.`,
+        { parse_mode: 'HTML' }
+      );
+    } catch {}
+
+    // Уведомить администраторов
     const adminIds = (process.env.ADMIN_IDS || '').split(',').map(Number).filter(Boolean);
     for (const adminId of adminIds) {
       await ctx.telegram.sendMessage(
@@ -358,7 +373,8 @@ function createBot(webappUrl) {
         `Услуга: ${escapeHtml(order.service_title)}\n` +
         `Покупатель: ${order.buyer_id}\n` +
         `Продавец: ${order.seller_id}\n` +
-        `Сумма: ${order.amount} ${escapeHtml(order.currency)}`,
+        `Сумма: ${order.amount} ${escapeHtml(order.currency)}\n\n` +
+        `Для возврата средств: /cancel ${orderId}`,
         { parse_mode: 'HTML' }
       );
     }
