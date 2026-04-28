@@ -38,7 +38,6 @@ router.get('/stats', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(err);
     logger.error('Route error', { msg: err.message });
     res.status(500).json({ error: 'Ошибка сервера' });
   }
@@ -99,7 +98,12 @@ router.post('/orders/:id/refund', async (req, res) => {
   try {
     const order = await db.findOne('orders', { id: parseInt(req.params.id) });
     if (!order) return res.status(404).json({ error: 'Заказ не найден' });
-    if (order.status !== 'disputed') return res.status(400).json({ error: 'Заказ не в статусе спора' });
+
+    const REFUNDABLE = ['in_progress', 'delivered', 'disputed'];
+    if (!REFUNDABLE.includes(order.status))
+      return res.status(400).json({
+        error: `Возврат невозможен. Статус заказа: "${order.status}". Допустимые: ${REFUNDABLE.join(', ')}`,
+      });
 
     const cryptobot = require('../cryptobot');
     try {
