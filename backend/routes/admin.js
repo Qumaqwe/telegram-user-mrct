@@ -112,7 +112,6 @@ router.post('/orders/:id/refund', async (req, res) => {
         asset:   order.currency,
         amount:  order.amount,
         spendId: `refund_${order.id}`,
-        comment: `Возврат по заказу #${order.id}`,
       });
     } catch (err) {
       logger.error('Refund transfer error', { msg: err.message });
