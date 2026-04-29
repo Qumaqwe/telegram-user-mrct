@@ -34,5 +34,6 @@ export function useApi() {
     deliverOrder:  (id)              => api.post(`/orders/${id}/deliver`),
     confirmOrder:  (id, data)        => api.post(`/orders/${id}/confirm`, data),
     disputeOrder:  (id, data)        => api.post(`/orders/${id}/dispute`, data),
+    leaveReview:   (id, data)        => api.post(`/orders/${id}/review`, data),
   };
 }
