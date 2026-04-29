@@ -118,7 +118,6 @@ async function checkAutoRefund(bot) {
           asset:   order.currency,
           amount:  order.amount,
           spendId: `auto_refund_${order.id}`,
-          comment: `Автовозврат по заказу #${order.id}: срок выполнения истёк`,
         });
         logger.info('Auto-refund transfer completed', { spendId: `order_${order.id}` });
       } catch (err) {
