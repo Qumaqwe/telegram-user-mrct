@@ -39,13 +39,15 @@ async function handleInvoicePaid(invoice) {
   const order = await db.findOne('orders', { id: payload.order_id });
   if (!order || !['pending_payment', 'in_progress'].includes(order.status)) return;
 
-  if (order.status === 'pending_payment') {
-    await db.updateOne('orders', {
-      status:               'in_progress',
-      cryptobot_payment_id: invoice.invoice_id,
-      paid_at:              new Date().toISOString(),
-    }, { id: order.id });
-  }
+  // Only transition and notify if the order hasn't been paid yet.
+  // A duplicate webhook for an already in_progress order is silently ignored.
+  if (order.status !== 'pending_payment') return;
+
+  await db.updateOne('orders', {
+    status:               'in_progress',
+    cryptobot_payment_id: invoice.invoice_id,
+    paid_at:              new Date().toISOString(),
+  }, { id: order.id });
 
   await notifyViaBot(async (bot) => {
     const buyer = await db.findOne('users', { telegram_id: order.buyer_id });
