@@ -33,7 +33,6 @@ async function completeOrder(orderId, { rating, comment } = {}) {
     asset:   order.currency,
     amount:  order.seller_amount,
     spendId: `order_${orderId}`,
-    comment: `Оплата за заказ #${orderId}: ${order.service_title}`,
   });
 
   await db.updateOne('orders', {
