@@ -316,8 +316,10 @@ function createBot(webappUrl) {
     }
 
     await db.updateOne('orders', {
-      status:      'refunded',
-      refunded_at: new Date().toISOString(),
+      status:      wasPaid ? 'refunded' : 'cancelled',
+      ...(wasPaid
+        ? { refunded_at:  new Date().toISOString() }
+        : { cancelled_at: new Date().toISOString() }),
     }, { id: orderId });
 
     await ctx.reply(
@@ -463,16 +465,18 @@ function createBot(webappUrl) {
     // Уведомить администраторов
     const adminIds = (process.env.ADMIN_IDS || '').split(',').map(Number).filter(Boolean);
     for (const adminId of adminIds) {
-      await ctx.telegram.sendMessage(
-        adminId,
-        `🚨 <b>Спор! Заказ #${orderId}</b>\n\n` +
-        `Услуга: ${escapeHtml(order.service_title)}\n` +
-        `Покупатель: ${order.buyer_id}\n` +
-        `Продавец: ${order.seller_id}\n` +
-        `Сумма: ${order.amount} ${escapeHtml(order.currency)}\n\n` +
-        `Для возврата средств: /cancel ${orderId}`,
-        { parse_mode: 'HTML' }
-      );
+      try {
+        await ctx.telegram.sendMessage(
+          adminId,
+          `🚨 <b>Спор! Заказ #${orderId}</b>\n\n` +
+          `Услуга: ${escapeHtml(order.service_title)}\n` +
+          `Покупатель: ${order.buyer_id}\n` +
+          `Продавец: ${order.seller_id}\n` +
+          `Сумма: ${order.amount} ${escapeHtml(order.currency)}\n\n` +
+          `Для возврата средств: /cancel ${orderId}`,
+          { parse_mode: 'HTML' }
+        );
+      } catch {}
     }
   });
 
