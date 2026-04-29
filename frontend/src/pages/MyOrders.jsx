@@ -42,7 +42,7 @@ function ContactLink({ username, name, label }) {
   );
 }
 
-function OrderCard({ order, role, onConfirm, onDispute, onDeliver, onPay, onCheckPayment }) {
+function OrderCard({ order, role, onConfirm, onDispute, onDeliver, onPay, onCheckPayment, onReview }) {
   const status = STATUS_LABELS[order.status] || { label: order.status, cls: 'badge-pending' };
   const otherName     = role === 'buyer' ? order.seller_name     : order.buyer_name;
   const otherUsername = role === 'buyer' ? order.seller_username : order.buyer_username;
@@ -193,6 +193,30 @@ function OrderCard({ order, role, onConfirm, onDispute, onDeliver, onPay, onChec
           </div>
         </div>
       )}
+
+      {/* Buyer: completed — show review or prompt */}
+      {role === 'buyer' && order.status === 'completed' && (
+        order.has_review ? (
+          <div style={{
+            background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
+            padding: '10px', fontSize: '13px',
+          }}>
+            <div style={{ color: '#f5c842', marginBottom: '4px' }}>
+              {'★'.repeat(order.review?.rating || 0)}{'☆'.repeat(5 - (order.review?.rating || 0))}
+              <span style={{ color: 'var(--text-secondary)', marginLeft: '6px' }}>
+                {order.review?.rating}/5
+              </span>
+            </div>
+            {order.review?.comment && (
+              <div style={{ color: 'var(--text-secondary)' }}>{order.review.comment}</div>
+            )}
+          </div>
+        ) : (
+          <button className="btn btn-secondary" onClick={() => onReview(order)}>
+            ⭐ Оставить отзыв
+          </button>
+        )
+      )}
     </div>
   );
 }
@@ -272,12 +296,90 @@ function ConfirmModal({ order, onClose, onDone }) {
   );
 }
 
+function ReviewModal({ order, onClose, onDone }) {
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { leaveReview } = useApi();
+  const { showAlert, haptic } = useTelegram();
+
+  const handleSubmit = async () => {
+    haptic('medium');
+    setLoading(true);
+    try {
+      await leaveReview(order.id, { rating, comment });
+      haptic('heavy');
+      onDone();
+    } catch (err) {
+      showAlert(err?.response?.data?.error || 'Ошибка отправки отзыва');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+      display: 'flex', alignItems: 'flex-end', zIndex: 200,
+    }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{
+        background: 'var(--bg-card)', borderRadius: '20px 20px 0 0',
+        padding: '24px 20px max(24px, env(safe-area-inset-bottom))', width: '100%',
+        border: '1px solid var(--border)',
+      }}>
+        <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '4px' }}>Оставить отзыв</h2>
+        <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+          {order.service_title}
+        </p>
+
+        <div className="input-group">
+          <label>Оценка исполнителя</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {[1, 2, 3, 4, 5].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setRating(s)}
+                style={{
+                  flex: 1, padding: '10px', border: 'none', borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer', fontSize: '20px',
+                  background: rating >= s ? 'rgba(245,200,66,0.2)' : 'var(--bg-input)',
+                  color: rating >= s ? '#f5c842' : 'var(--text-secondary)',
+                  transition: 'all 0.15s',
+                }}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="input-group">
+          <label>Комментарий (необязательно)</label>
+          <textarea className="input-field" rows={3} placeholder="Всё отлично, рекомендую!"
+            value={comment} onChange={(e) => setComment(e.target.value)} maxLength={500} />
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>
+            Пропустить
+          </button>
+          <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleSubmit} disabled={loading}>
+            {loading ? '⏳ Отправка...' : '⭐ Отправить отзыв'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MyOrders() {
   const [data, setData] = useState(null);
   const [myServices, setMyServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('services');
   const [confirmModal, setConfirmModal] = useState(null);
+  const [reviewModal, setReviewModal] = useState(null);
   const { getMyOrders, getMe, deleteService, disputeOrder, deliverOrder, checkPayment } = useApi();
   const { showAlert, haptic, tg } = useTelegram();
 
@@ -423,6 +525,7 @@ export default function MyOrders() {
                     onDispute={handleDispute}
                     onPay={handlePay}
                     onCheckPayment={handleCheckPayment}
+                    onReview={(order) => setReviewModal(order)}
                   />
                 ))}
               </div>
@@ -456,6 +559,18 @@ export default function MyOrders() {
           onDone={() => {
             setConfirmModal(null);
             showAlert('🎉 Оплата переведена исполнителю!');
+            fetchData();
+          }}
+        />
+      )}
+
+      {reviewModal && (
+        <ReviewModal
+          order={reviewModal}
+          onClose={() => setReviewModal(null)}
+          onDone={() => {
+            setReviewModal(null);
+            showAlert('⭐ Отзыв отправлен, спасибо!');
             fetchData();
           }}
         />
