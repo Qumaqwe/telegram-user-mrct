@@ -170,12 +170,17 @@ router.get('/my', validateTelegramData, async (req, res) => {
     async function enrich(order) {
       const buyer  = await db.findOne('users', { telegram_id: order.buyer_id  });
       const seller = await db.findOne('users', { telegram_id: order.seller_id });
+      const review = order.status === 'completed'
+        ? await db.findOne('reviews', { order_id: order.id })
+        : null;
       return {
         ...order,
         buyer_name:      buyer?.first_name  || 'Покупатель',
         buyer_username:  buyer?.username    || null,
         seller_name:     seller?.first_name || 'Продавец',
         seller_username: seller?.username   || null,
+        has_review:      !!review,
+        review:          review || null,
       };
     }
 
@@ -404,6 +409,58 @@ router.post('/:id/cancel', validateTelegramData, async (req, res) => {
         `❌ <b>Заказ #${order.id} отменён.</b>\n\n` +
         `Услуга: <b>${escapeHtml(order.service_title)}</b>\n\n` +
         `Если у вас были проблемы с продавцом или его услуга нарушает правила — сообщите нам:\n/report`,
+        { parse_mode: 'HTML' }
+      );
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Route error', { msg: err.message });
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Leave review for a completed order (post-completion, one review per order)
+// ---------------------------------------------------------------------------
+router.post('/:id/review', validateTelegramData, async (req, res) => {
+  try {
+    const { id } = req.telegramUser;
+    const { rating, comment } = req.body;
+
+    const order = await db.findOne('orders', { id: parseInt(req.params.id) });
+    if (!order) return res.status(404).json({ error: 'Заказ не найден' });
+    if (order.buyer_id !== id) return res.status(403).json({ error: 'Оставить отзыв может только покупатель' });
+    if (order.status !== 'completed') return res.status(400).json({ error: 'Отзыв можно оставить только для завершённого заказа' });
+
+    const parsedRating = parseInt(rating);
+    if (!parsedRating || parsedRating < 1 || parsedRating > 5)
+      return res.status(400).json({ error: 'Оценка: число от 1 до 5' });
+
+    if (comment && comment.length > 500)
+      return res.status(400).json({ error: 'Комментарий: не более 500 символов' });
+
+    // One review per order
+    const existing = await db.findOne('reviews', { order_id: order.id });
+    if (existing) return res.status(409).json({ error: 'Вы уже оставили отзыв на этот заказ' });
+
+    await db.insertOne('reviews', {
+      order_id:    order.id,
+      reviewer_id: id,
+      seller_id:   order.seller_id,
+      rating:      parsedRating,
+      comment:     comment || null,
+      created_at:  new Date().toISOString(),
+    });
+
+    // Notify seller
+    await notifyViaBot(async (bot) => {
+      await bot.telegram.sendMessage(
+        order.seller_id,
+        `⭐ <b>Новый отзыв на заказ #${order.id}</b>\n\n` +
+        `Услуга: <b>${escapeHtml(order.service_title)}</b>\n` +
+        `Оценка: <b>${'⭐'.repeat(parsedRating)}</b> (${parsedRating}/5)` +
+        (comment ? `\n\n${escapeHtml(comment)}` : ''),
         { parse_mode: 'HTML' }
       );
     });
