@@ -133,6 +133,13 @@ router.post('/orders/:id/refund', async (req, res) => {
         `Средства переведены на ваш @CryptoBot кошелёк.`,
         { parse_mode: 'HTML' }
       );
+      await bot.telegram.sendMessage(
+        order.seller_id,
+        `ℹ️ <b>Возврат по заказу #${order.id}</b>\n\n` +
+        `Услуга: <b>${escapeHtml(order.service_title)}</b>\n\n` +
+        `Администратор принял решение вернуть средства покупателю.`,
+        { parse_mode: 'HTML' }
+      ).catch(() => {});
     });
 
     res.json({ success: true });
