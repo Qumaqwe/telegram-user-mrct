@@ -303,7 +303,6 @@ function createBot(webappUrl) {
           asset:   order.currency,
           amount:  order.amount,
           spendId: `refund_${orderId}`,
-          comment: `Возврат по заказу #${orderId}`,
         });
       } catch (err) {
         logger.error('Cancel refund transfer error', { msg: err.message });
