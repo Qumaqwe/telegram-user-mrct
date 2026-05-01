@@ -91,7 +91,9 @@ router.post('/', validateTelegramData, createContentLimiter, async (req, res) =>
       return res.status(400).json({ error: 'Валюта: TON или USDT' });
 
     const priceNum = parseFloat(price);
-    const minPrice = currency === 'USDT' ? 2 : 1;
+    // TON minimum = 1.2 so seller receives 1.14 TON (after 5% commission),
+    // which stays above CryptoBot's ~$1 transfer floor even at low TON prices.
+    const minPrice = currency === 'USDT' ? 2 : 1.2;
     if (isNaN(priceNum) || priceNum < minPrice)
       return res.status(400).json({ error: `Минимальная цена: ${minPrice} ${currency} (ограничение CryptoBot — мин. перевод $1)` });
 
