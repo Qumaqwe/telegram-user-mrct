@@ -69,4 +69,47 @@ async function notifyViaBot(fn) {
   }
 }
 
-module.exports = { escapeHtml, notifyViaBot, logger };
+/** Фрагмент HTML для уведомления продавца об оплате заказа */
+function cryptobotSellerOrderPaidHintHtml() {
+  return (
+    `\n\n💎 <b>Выплата:</b> после заказа деньги приходят только на баланс <b>@CryptoBot</b>. ` +
+    `Если вы ещё не открывали этого бота — зайдите в <a href="https://t.me/CryptoBot">t.me/CryptoBot</a> и нажмите «Старт», иначе автоматический перевод может не выполниться.`
+  );
+}
+
+function isCryptobotUserMissingError(err) {
+  return !!(err && typeof err.message === 'string' && err.message.includes('USER_NOT_FOUND'));
+}
+
+/** Личное сообщение продавцу: без активации CryptoBot выплата не дойдёт */
+async function notifySellerCryptobotRequiredForPayout(sellerTelegramId, opts = {}) {
+  const orderId = opts.orderId;
+  const orderLine = orderId !== undefined && orderId !== null
+    ? `Заказ <b>#${escapeHtml(String(orderId))}</b>: перевод не выполнен — чаще всего это значит, что вы ещё не активировали <b>@CryptoBot</b>.\n\n`
+    : '';
+
+  await notifyViaBot(async (bot) => {
+    try {
+      await bot.telegram.sendMessage(
+        sellerTelegramId,
+        `⚠️ <b>Нужен @CryptoBot для получения выплаты</b>\n\n` +
+        orderLine +
+        `Откройте <a href="https://t.me/CryptoBot">t.me/CryptoBot</a> и нажмите «Старт». ` +
+        `После этого попросите покупателя снова подтвердить заказ в приложении CoreTalent (или дождитесь автоподтверждения через 3 дня после того, как вы отметили заказ выполненным).\n\n` +
+        `Подробнее: /help`,
+        { parse_mode: 'HTML', disable_web_page_preview: true }
+      );
+    } catch (err) {
+      logger.error('Seller CryptoBot reminder DM failed', { msg: err.message });
+    }
+  });
+}
+
+module.exports = {
+  escapeHtml,
+  notifyViaBot,
+  logger,
+  cryptobotSellerOrderPaidHintHtml,
+  isCryptobotUserMissingError,
+  notifySellerCryptobotRequiredForPayout,
+};
