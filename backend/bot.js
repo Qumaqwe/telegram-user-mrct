@@ -1,6 +1,12 @@
 const { Telegraf, Markup } = require('telegraf');
 const { db } = require('./database');
-const { escapeHtml, logger, notifyViaBot } = require('./utils');
+const {
+  escapeHtml,
+  logger,
+  notifyViaBot,
+  isCryptobotUserMissingError,
+  notifySellerCryptobotRequiredForPayout,
+} = require('./utils');
 const { completeOrder } = require('./escrow');
 const cryptobot = require('./cryptobot');
 
@@ -414,6 +420,27 @@ function createBot(webappUrl) {
     } catch (err) {
       logger.error('Transfer error (bot confirm)', { msg: err.message });
       await ctx.answerCbQuery('Ошибка перевода');
+      if (isCryptobotUserMissingError(err)) {
+        let sellerNotified = false;
+        if (!order.payout_cryptobot_notice_at) {
+          await notifySellerCryptobotRequiredForPayout(order.seller_id, { orderId });
+          await db.updateOne(
+            'orders',
+            { payout_cryptobot_notice_at: new Date().toISOString() },
+            { id: orderId }
+          );
+          sellerNotified = true;
+        }
+        const tail = sellerNotified
+          ? `\n\nМы отправили исполнителю напоминание в личные сообщения.`
+          : '';
+        return ctx.reply(
+          `⚠️ Перевод исполнителю не выполнен: он ещё не активировал <b>@CryptoBot</b>.\n\n` +
+          `Попросите исполнителя открыть <a href="https://t.me/CryptoBot">t.me/CryptoBot</a> и нажать «Старт», затем нажмите подтверждение снова.` +
+          tail,
+          { parse_mode: 'HTML', disable_web_page_preview: true }
+        );
+      }
       return ctx.reply(
         `❌ Ошибка перевода:\n<code>${escapeHtml(err.message)}</code>\n\nОбратитесь к администратору.`,
         { parse_mode: 'HTML' }
