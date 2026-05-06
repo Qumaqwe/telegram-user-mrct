@@ -3,7 +3,14 @@ const router = express.Router();
 const { db } = require('../database');
 const { validateTelegramData } = require('../middleware/auth');
 const cryptobot = require('../cryptobot');
-const { escapeHtml, notifyViaBot, logger } = require('../utils');
+const {
+  escapeHtml,
+  notifyViaBot,
+  logger,
+  cryptobotSellerOrderPaidHintHtml,
+  isCryptobotUserMissingError,
+  notifySellerCryptobotRequiredForPayout,
+} = require('../utils');
 const { completeOrder } = require('../escrow');
 const { createOrderLimiter, checkPaymentLimiter } = require('../middleware/rateLimit');
 
@@ -67,7 +74,8 @@ async function handleInvoicePaid(invoice) {
       `Покупатель: ${buyerContact}\n` +
       `Сумма: <b>${order.amount} ${escapeHtml(order.currency)}</b> (вам: ${order.seller_amount})\n\n` +
       (order.requirements ? `📋 <b>Требования:</b>\n${escapeHtml(order.requirements)}\n\n` : '') +
-      `Выполните заказ, свяжитесь с покупателем и нажмите кнопку ниже:`,
+      cryptobotSellerOrderPaidHintHtml() +
+      `\n\nВыполните заказ, свяжитесь с покупателем и нажмите кнопку ниже:`,
       {
         parse_mode: 'HTML',
         reply_markup: {
@@ -301,8 +309,17 @@ router.post('/:id/confirm', validateTelegramData, async (req, res) => {
       let msg = `Ошибка перевода: ${err.message}`;
       if (err.message.includes('AMOUNT_TOO_SMALL'))
         msg = 'Сумма слишком мала для перевода через CryptoBot (минимум ~$1). Обратитесь к администратору.';
-      if (err.message.includes('USER_NOT_FOUND'))
-        msg = 'Продавец не запускал @CryptoBot. Попросите его написать /start боту t.me/CryptoBot и попробуйте снова.';
+      if (isCryptobotUserMissingError(err)) {
+        msg = 'Продавец не запускал @CryptoBot. Попросите его открыть t.me/CryptoBot и нажать «Старт», затем подтвердите заказ снова.';
+        if (!order.payout_cryptobot_notice_at) {
+          await notifySellerCryptobotRequiredForPayout(order.seller_id, { orderId: order.id });
+          await db.updateOne(
+            'orders',
+            { payout_cryptobot_notice_at: new Date().toISOString() },
+            { id: order.id }
+          );
+        }
+      }
       return res.status(500).json({ error: msg });
     }
 
