@@ -32,6 +32,7 @@ export default function CreateService() {
     if (!form.title || form.title.length < 5)    e.title = 'Минимум 5 символов';
     if (!form.category)                           e.category = 'Выберите категорию';
     if (!form.description || form.description.length < 20) e.description = 'Минимум 20 символов';
+    if (form.description && form.description.length > 75) e.description = 'Максимум 75 символов';
     const p = parseFloat(form.price);
     const minP = form.currency === 'USDT' ? 2 : 1;
     if (!form.price || isNaN(p) || p < minP)      e.price = `Минимум ${minP} ${form.currency}`;
@@ -136,11 +137,11 @@ export default function CreateService() {
         {/* Description */}
         <div className="input-group">
           <label>Описание *</label>
-          <textarea className="input-field" rows={5} maxLength={1000}
+          <textarea className="input-field" rows={5} maxLength={75}
             placeholder="Подробно опиши что входит в услугу, твой опыт, примеры работ..."
             value={form.description} onChange={(e) => set('description', e.target.value)} />
           {errors.description && <span style={{ color: 'var(--danger)', fontSize: '13px' }}>{errors.description}</span>}
-          <span style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'right' }}>{form.description.length}/1000</span>
+          <span style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'right' }}>{form.description.length}/75</span>
         </div>
 
         {/* Price + Currency */}
