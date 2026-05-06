@@ -18,7 +18,7 @@
 const { db }        = require('./database');
 const cryptobot     = require('./cryptobot');
 const { completeOrder } = require('./escrow');
-const { escapeHtml, logger } = require('./utils');
+const { escapeHtml, logger, isCryptobotUserMissingError, notifySellerCryptobotRequiredForPayout } = require('./utils');
 
 const CHECK_INTERVAL_MS    = 60 * 60 * 1000; // каждый час
 const AUTO_REFUND_GRACE    = 2 * 24 * 60 * 60 * 1000; // +2 дня после дедлайна
@@ -186,6 +186,28 @@ async function checkAutoComplete(bot) {
         logger.info('Auto-complete transfer done', { spendId: `order_${order.id}` });
       } catch (err) {
         logger.error('Auto-complete transfer failed', { msg: err.message });
+        if (isCryptobotUserMissingError(err)) {
+          if (!order.payout_cryptobot_notice_at) {
+            await notifySellerCryptobotRequiredForPayout(order.seller_id, { orderId: order.id });
+            try {
+              await bot.telegram.sendMessage(
+                order.buyer_id,
+                `⚠️ <b>Заказ #${order.id}</b> должен был завершиться автоматически, но выплата исполнителю не прошла — ` +
+                `скорее всего, исполнитель не активировал <b>@CryptoBot</b>.\n\n` +
+                `Перевод будет возможен после того, как он откроет <a href="https://t.me/CryptoBot">t.me/CryptoBot</a> и нажмёт «Старт». ` +
+                `Заказ остаётся на проверке; вы можете подтвердить вручную в приложении после его настройки.`,
+                { parse_mode: 'HTML', disable_web_page_preview: true }
+              );
+            } catch (notifyErr) {
+              logger.error('Auto-complete: failed to notify buyer about CryptoBot', { msg: notifyErr.message });
+            }
+            await db.updateOne(
+              'orders',
+              { payout_cryptobot_notice_at: new Date().toISOString() },
+              { id: order.id }
+            );
+          }
+        }
         continue;
       }
 
