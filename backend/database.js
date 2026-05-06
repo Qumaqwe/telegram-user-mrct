@@ -206,6 +206,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_days    INT`);
   await pool.query(`ALTER TABLE users  ADD COLUMN IF NOT EXISTS is_banned        BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE users  ADD COLUMN IF NOT EXISTS ban_reason       TEXT`);
   await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payout_cryptobot_notice_at TIMESTAMPTZ`);
 
   console.log('✅ PostgreSQL: таблицы готовы');
